@@ -20,12 +20,16 @@ It is designed for people who want:
 - Batch processing for multiple audio or video files
 - Gradio UI for drag-and-drop use
 - Local disk mode for direct file paths or folder scans without browser upload
+- Configurable subtitle segmentation for cleaner `srt` and `vtt` exports
+- Experimental speaker diarization with optional `pyannote.audio` support
+- Folder watch CLI workflow for auto-transcribing new media files
 - Live stage-by-stage progress for long-running transcriptions
 - CLI mode for automation and power users
 - Export formats: `txt`, `srt`, `vtt`, `json`
 - Quality-first model option: `large-v3`
 - Speed-first model option: `turbo`
 - Installable in supported browsers as a PWA
+- Windows desktop bundle build script and GitHub Actions artifact workflow
 
 ## Supported Inputs
 
@@ -104,6 +108,18 @@ You can also use the installed console entry point:
 massscriber transcribe "C:\audio\meeting.mp3" --model turbo --formats txt srt
 ```
 
+### Watch a folder for new files
+
+```powershell
+massscriber watch "C:\audio\incoming" --model turbo --once
+```
+
+For a long-running workflow:
+
+```powershell
+massscriber watch "C:\audio\incoming" --model turbo --archive-dir "C:\audio\done"
+```
+
 ## Recommended Settings
 
 ### Best quality
@@ -120,6 +136,24 @@ massscriber transcribe "C:\audio\meeting.mp3" --model turbo --formats txt srt
 - Compute type: `float16`
 - Batch size: `8` or `16`
 
+### Better subtitles
+
+- Subtitle max chars: `36` to `48`
+- Subtitle max duration: `4.0` to `6.0`
+- Pause split: enabled
+
+### Experimental speaker diarization
+
+- Enable only when you really need speaker labels
+- Install the optional extra first:
+
+```powershell
+python -m pip install -e ".[diarization]"
+```
+
+- Provide a Hugging Face token either through `HUGGINGFACE_HUB_TOKEN` or the UI/CLI field
+- Default model: `pyannote/speaker-diarization-3.1`
+
 ## Outputs
 
 By default, transcripts are written to the `outputs` directory:
@@ -129,6 +163,8 @@ By default, transcripts are written to the `outputs` directory:
 - `json`
 
 You can also enable `vtt` from the UI or CLI.
+
+SRT and VTT exports now use configurable subtitle regrouping, so long whisper segments can be re-cut into shorter subtitle cues.
 
 ## GPU Notes
 
@@ -143,6 +179,23 @@ According to the `faster-whisper` recommendations:
 - `float16` or `int8_float16` are good GPU options
 
 If you hit CUDA DLL issues on Windows, follow the Windows notes in the official `faster-whisper` documentation.
+
+## Desktop Builds
+
+To create a Windows desktop bundle locally:
+
+```bat
+build_desktop.bat
+```
+
+Or manually:
+
+```powershell
+python -m pip install -e ".[desktop]"
+python build_desktop.py
+```
+
+GitHub Actions also includes a Windows desktop build workflow that uploads a `Massscriber-windows` artifact for tagged releases and manual runs.
 
 ## First Run Behavior
 
@@ -171,12 +224,20 @@ python -m py_compile app.py massscriber\__init__.py massscriber\types.py massscr
 - Release steps are documented in [RELEASING.md](RELEASING.md)
 - Pushing a tag like `v0.1.0` triggers the GitHub release workflow
 
-## Roadmap
+## Roadmap Progress
 
-- Speaker diarization
-- Better subtitle segmentation options
-- Packaged desktop builds
-- Folder watch / auto-transcribe workflows
+- Experimental speaker diarization support is now wired in as an optional extra.
+- Subtitle exports now have configurable regrouping controls for better cue sizing.
+- Folder watch and auto-transcribe workflows now exist in the CLI with persistent state and optional archiving.
+- Desktop packaging now has a local build script and a Windows artifact workflow.
+
+## Next Roadmap
+
+- Promote folder watch into the UI with start/stop controls and saved watch profiles
+- Improve diarization with speaker-aware word-level subtitle cues
+- Produce signed desktop installers instead of raw bundles
+- Add transcript search, batch review, and glossary-aware correction tools
+- Add project-level transcript libraries for large collections
 
 ## License
 

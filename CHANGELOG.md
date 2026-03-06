@@ -6,6 +6,11 @@ The format is inspired by Keep a Changelog and the project follows Semantic Vers
 
 ## [Unreleased]
 
+- Added configurable subtitle regrouping controls for cleaner `srt` and `vtt` exports.
+- Added a `watch` CLI workflow with persistent state and optional archive moves.
+- Added experimental speaker diarization plumbing with optional `pyannote.audio` support.
+- Added Windows desktop bundle build scripts and a GitHub Actions desktop artifact workflow.
+
 ## [0.1.2] - 2026-03-06
 
 - Added automatic CPU fallback when CUDA runtime DLLs like `cublas64_12.dll` are missing.

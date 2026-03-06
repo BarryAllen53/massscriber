@@ -6,6 +6,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from massscriber import transcriber
+from massscriber.diarization import SpeakerTurn
 from massscriber.transcriber import TranscriptionEngine, WhisperRuntime
 from massscriber.types import TranscriptionSettings
 
@@ -122,3 +123,36 @@ class TranscriberProgressTests(TestCase):
                 self.assertEqual(result.device, "cpu")
                 self.assertEqual(result.compute_type, "int8")
                 clear_backend.assert_called_once()
+
+    def test_stream_file_can_apply_experimental_speaker_diarization(self):
+        settings = TranscriptionSettings(
+            model="tiny",
+            output_formats=("txt",),
+            enable_diarization=True,
+            diarization_token="demo-token",
+        )
+        engine = TranscriptionEngine()
+
+        with TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            audio_path = tmp_path / "sample.wav"
+            audio_path.write_bytes(b"fake")
+
+            with patch.object(
+                WhisperRuntime,
+                "get_backend",
+                return_value=(FakeModel(), None, "cpu", "int8"),
+            ), patch.object(
+                transcriber,
+                "diarize_audio",
+                return_value=(
+                    [SpeakerTurn(start=0.0, end=10.0, speaker="Speaker 1")],
+                    ["[INFO] Speaker diarization tamamlandi: 1 turn bulundu."],
+                ),
+            ):
+                events = list(engine.stream_file(audio_path, settings, tmp_path / "outputs"))
+
+                self.assertTrue(any("speaker diarization" in message.lower() for _, message, _ in events))
+                result = events[-1][2]
+                self.assertIsNotNone(result)
+                self.assertEqual(result.segments[0].speaker, "Speaker 1")

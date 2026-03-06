@@ -9,6 +9,7 @@ import threading
 from collections.abc import Iterator
 from pathlib import Path
 
+from massscriber.diarization import assign_speakers_to_segments, diarize_audio
 from massscriber.exporters import export_result, sanitize_name, to_plain_text
 from massscriber.types import SegmentData, TranscriptionResult, TranscriptionSettings, WordTiming
 
@@ -309,6 +310,23 @@ class TranscriptionEngine:
                     last_progress = current_progress
                     yield current_progress, f"{source.name}: transkribe ediliyor (segment {index + 1})", None
 
+        if settings.enable_diarization:
+            yield 0.89, f"{source.name}: speaker diarization calisiyor", None
+            speaker_turns, diarization_messages = diarize_audio(
+                source,
+                settings,
+                prefer_device=device,
+            )
+            for message in diarization_messages:
+                if message.startswith("[UYARI]"):
+                    logger.warning("%s", message)
+                else:
+                    logger.info("%s", message)
+                yield 0.9, message, None
+            if speaker_turns:
+                assign_speakers_to_segments(segments, speaker_turns)
+                yield 0.91, f"{source.name}: speaker etiketleri uygulandi", None
+
         yield 0.92, f"{source.name}: metin toparlaniyor", None
         text = to_plain_text(segments)
         base_name = build_base_name(source)
@@ -334,7 +352,7 @@ class TranscriptionEngine:
             output_files=output_files,
         )
         yield 0.97, f"{source.name}: ciktilar yaziliyor", None
-        export_result(result, output_root)
+        export_result(result, output_root, settings)
         yield 1.0, f"{source.name}: tamamlandi", result
 
     def transcribe_file(

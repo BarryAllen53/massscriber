@@ -2,10 +2,39 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from massscriber.ui import collect_input_files
+from massscriber.ui import build_arg_parser, build_settings_from_args, collect_input_files
 
 
 class UiInputTests(TestCase):
+    def test_build_settings_from_cli_args_captures_subtitle_and_diarization_options(self):
+        parser = build_arg_parser()
+        args = parser.parse_args(
+            [
+                "transcribe",
+                "demo.mp3",
+                "--subtitle-max-chars",
+                "48",
+                "--subtitle-max-duration",
+                "5.5",
+                "--subtitle-pause-threshold",
+                "0.8",
+                "--enable-diarization",
+                "--diarization-model",
+                "pyannote/test-model",
+                "--diarization-token",
+                "token-123",
+            ]
+        )
+
+        settings = build_settings_from_args(args)
+
+        self.assertEqual(settings.subtitle_max_chars, 48)
+        self.assertEqual(settings.subtitle_max_duration, 5.5)
+        self.assertEqual(settings.subtitle_pause_threshold, 0.8)
+        self.assertTrue(settings.enable_diarization)
+        self.assertEqual(settings.diarization_model, "pyannote/test-model")
+        self.assertEqual(settings.diarization_token, "token-123")
+
     def test_collect_input_files_combines_upload_manual_and_folder_sources(self):
         with TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

@@ -8,6 +8,7 @@ import gradio as gr
 
 from massscriber.transcriber import SUPPORTED_MODELS, TranscriptionEngine
 from massscriber.types import TranscriptionSettings
+from massscriber.watcher import watch_folder
 
 APP_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT_DIR = APP_ROOT / "outputs"
@@ -167,6 +168,49 @@ def build_demo() -> gr.Blocks:
                     label="Onceki Metni Baglam Olarak Kullan",
                 )
 
+            with gr.Row():
+                subtitle_max_chars = gr.Slider(
+                    minimum=20,
+                    maximum=84,
+                    step=2,
+                    value=42,
+                    label="Altyazi Maks Karakter",
+                )
+                subtitle_max_duration = gr.Slider(
+                    minimum=2.0,
+                    maximum=10.0,
+                    step=0.5,
+                    value=6.0,
+                    label="Altyazi Maks Sure (sn)",
+                )
+                subtitle_pause_threshold = gr.Slider(
+                    minimum=0.0,
+                    maximum=2.0,
+                    step=0.05,
+                    value=0.6,
+                    label="Duraklama Esigi (sn)",
+                )
+                subtitle_split_on_pause = gr.Checkbox(
+                    value=True,
+                    label="Duraklamada Altyaziyi Bol",
+                )
+
+            with gr.Row():
+                enable_diarization = gr.Checkbox(
+                    value=False,
+                    label="Speaker Diarization (Deneysel)",
+                )
+                diarization_model = gr.Textbox(
+                    value="pyannote/speaker-diarization-3.1",
+                    label="Diarization Modeli",
+                )
+                diarization_token = gr.Textbox(
+                    value="",
+                    type="password",
+                    label="HF Token (opsiyonel)",
+                    placeholder="HUGGINGFACE_HUB_TOKEN yoksa buraya girebilirsin",
+                )
+
         with gr.Row():
             run_button = gr.Button("Transcribe", variant="primary")
             clear_button = gr.Button("Temizle")
@@ -212,6 +256,13 @@ def build_demo() -> gr.Blocks:
                 output_dir,
                 initial_prompt,
                 condition_on_previous_text,
+                subtitle_max_chars,
+                subtitle_max_duration,
+                subtitle_pause_threshold,
+                subtitle_split_on_pause,
+                enable_diarization,
+                diarization_model,
+                diarization_token,
             ],
             outputs=[result_table, preview, downloads, logs],
         )
@@ -324,6 +375,13 @@ def run_batch(
     output_dir: str,
     initial_prompt: str,
     condition_on_previous_text: bool,
+    subtitle_max_chars: int,
+    subtitle_max_duration: float,
+    subtitle_pause_threshold: float,
+    subtitle_split_on_pause: bool,
+    enable_diarization: bool,
+    diarization_model: str,
+    diarization_token: str,
     progress: gr.Progress = gr.Progress(),
 ):
     if not output_formats:
@@ -351,6 +409,13 @@ def run_batch(
         condition_on_previous_text=bool(condition_on_previous_text),
         initial_prompt=initial_prompt,
         cpu_threads=int(cpu_threads) if cpu_threads else None,
+        subtitle_max_chars=int(subtitle_max_chars),
+        subtitle_max_duration=float(subtitle_max_duration),
+        subtitle_split_on_pause=bool(subtitle_split_on_pause),
+        subtitle_pause_threshold=float(subtitle_pause_threshold),
+        enable_diarization=bool(enable_diarization),
+        diarization_model=diarization_model.strip() or "pyannote/speaker-diarization-3.1",
+        diarization_token=diarization_token.strip() or None,
         output_formats=tuple(output_formats),
     )
 
@@ -462,37 +527,57 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     cli_parser = subparsers.add_parser("transcribe", help="Transcribe files from the CLI")
     cli_parser.add_argument("files", nargs="+", help="Audio or video files to transcribe")
-    cli_parser.add_argument("--model", default="large-v3", choices=SUPPORTED_MODELS)
-    cli_parser.add_argument("--language", default="auto")
-    cli_parser.add_argument("--task", default="transcribe", choices=["transcribe", "translate"])
-    cli_parser.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
-    cli_parser.add_argument(
+    add_common_transcription_arguments(cli_parser)
+
+    watch_parser = subparsers.add_parser("watch", help="Watch a folder and auto-transcribe new media files")
+    watch_parser.add_argument("folder", help="Folder to watch for media files")
+    watch_parser.add_argument("--poll-interval", type=float, default=5.0)
+    watch_parser.add_argument("--stable-seconds", type=float, default=10.0)
+    watch_parser.add_argument("--once", action="store_true")
+    watch_parser.add_argument("--archive-dir", default="")
+    watch_parser.add_argument("--no-recursive", action="store_true")
+    add_common_transcription_arguments(watch_parser)
+
+    return parser
+
+
+def add_common_transcription_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--model", default="large-v3", choices=SUPPORTED_MODELS)
+    parser.add_argument("--language", default="auto")
+    parser.add_argument("--task", default="transcribe", choices=["transcribe", "translate"])
+    parser.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
+    parser.add_argument(
         "--compute-type",
         default="auto",
         choices=["auto", "float16", "int8_float16", "int8", "float32"],
     )
-    cli_parser.add_argument("--beam-size", type=int, default=5)
-    cli_parser.add_argument("--batch-size", type=int, default=8)
-    cli_parser.add_argument("--temperature", type=float, default=0.0)
-    cli_parser.add_argument("--no-vad", action="store_true")
-    cli_parser.add_argument("--no-word-timestamps", action="store_true")
-    cli_parser.add_argument("--use-context", action="store_true")
-    cli_parser.add_argument("--vad-min-silence-ms", type=int, default=500)
-    cli_parser.add_argument("--cpu-threads", type=int, default=0)
-    cli_parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
-    cli_parser.add_argument(
+    parser.add_argument("--beam-size", type=int, default=5)
+    parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--temperature", type=float, default=0.0)
+    parser.add_argument("--no-vad", action="store_true")
+    parser.add_argument("--no-word-timestamps", action="store_true")
+    parser.add_argument("--use-context", action="store_true")
+    parser.add_argument("--vad-min-silence-ms", type=int, default=500)
+    parser.add_argument("--cpu-threads", type=int, default=0)
+    parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
+    parser.add_argument(
         "--formats",
         nargs="+",
         choices=["txt", "srt", "vtt", "json"],
         default=["txt", "srt", "json"],
     )
-    cli_parser.add_argument("--initial-prompt", default="")
+    parser.add_argument("--initial-prompt", default="")
+    parser.add_argument("--subtitle-max-chars", type=int, default=42)
+    parser.add_argument("--subtitle-max-duration", type=float, default=6.0)
+    parser.add_argument("--subtitle-pause-threshold", type=float, default=0.6)
+    parser.add_argument("--no-subtitle-pause-split", action="store_true")
+    parser.add_argument("--enable-diarization", action="store_true")
+    parser.add_argument("--diarization-model", default="pyannote/speaker-diarization-3.1")
+    parser.add_argument("--diarization-token", default="")
 
-    return parser
 
-
-def run_cli(args: argparse.Namespace) -> int:
-    settings = TranscriptionSettings(
+def build_settings_from_args(args: argparse.Namespace) -> TranscriptionSettings:
+    return TranscriptionSettings(
         model=args.model,
         language=None if args.language.lower() == "auto" else args.language,
         task=args.task,
@@ -507,17 +592,53 @@ def run_cli(args: argparse.Namespace) -> int:
         condition_on_previous_text=args.use_context,
         initial_prompt=args.initial_prompt,
         cpu_threads=args.cpu_threads or None,
+        subtitle_max_chars=args.subtitle_max_chars,
+        subtitle_max_duration=args.subtitle_max_duration,
+        subtitle_split_on_pause=not args.no_subtitle_pause_split,
+        subtitle_pause_threshold=args.subtitle_pause_threshold,
+        enable_diarization=args.enable_diarization,
+        diarization_model=args.diarization_model,
+        diarization_token=args.diarization_token or None,
         output_formats=tuple(args.formats),
     )
 
+
+def run_cli(args: argparse.Namespace) -> int:
+    settings = build_settings_from_args(args)
+
     engine = TranscriptionEngine()
     for raw_file in args.files:
-        result = engine.transcribe_file(raw_file, settings, args.output_dir)
+        result = None
+        for _, message, maybe_result in engine.stream_file(raw_file, settings, args.output_dir):
+            if maybe_result is not None:
+                result = maybe_result
+            elif message.startswith("[UYARI]") or message.startswith("[INFO]"):
+                print(message)
+
+        if result is None:
+            raise RuntimeError(f"Transcription finished without a result: {raw_file}")
         print(f"[OK] {Path(raw_file).name}")
         print(f"  Language: {result.language or 'unknown'}")
         print(f"  Duration: {round(result.duration or 0, 2)} sec")
         print(f"  Outputs : {', '.join(str(path) for path in result.output_files.values())}")
 
+    return 0
+
+
+def run_watch(args: argparse.Namespace) -> int:
+    settings = build_settings_from_args(args)
+    events = watch_folder(
+        args.folder,
+        settings,
+        args.output_dir,
+        recursive=not args.no_recursive,
+        poll_interval=args.poll_interval,
+        stable_seconds=args.stable_seconds,
+        once=args.once,
+        archive_dir=args.archive_dir or None,
+    )
+    for event in events:
+        print(event)
     return 0
 
 
@@ -544,6 +665,9 @@ def main() -> int:
 
     if args.command == "transcribe":
         return run_cli(args)
+
+    if args.command == "watch":
+        return run_watch(args)
 
     parser.print_help()
     return 1

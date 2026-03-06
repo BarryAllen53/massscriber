@@ -41,6 +41,7 @@ The GitHub Actions release workflow will:
 - create a GitHub Release
 - upload the built artifacts to that release
 - publish the tagged version to PyPI through Trusted Publishing once the publisher is configured on PyPI
+- trigger the Windows desktop artifact workflow for tagged releases
 
 ## PyPI setup
 
