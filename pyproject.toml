@@ -4,18 +4,39 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "massscriber"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Local, free, multilingual audio transcription app powered by faster-whisper."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
 authors = [
-  { name = "Codex" }
+  { name = "BarryAllen53" }
+]
+keywords = ["transcription", "whisper", "audio", "speech-to-text", "gradio"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: End Users/Desktop",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
 dependencies = [
   "faster-whisper>=1.2.1,<2.0.0",
   "gradio>=5.25.0,<6.0.0",
 ]
 
+[project.scripts]
+massscriber = "massscriber.ui:main"
+
+[project.urls]
+Homepage = "https://github.com/BarryAllen53/massscriber"
+Repository = "https://github.com/BarryAllen53/massscriber"
+Issues = "https://github.com/BarryAllen53/massscriber/issues"
+
 [tool.setuptools.packages.find]
 include = ["massscriber*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "massscriber.__version__" }

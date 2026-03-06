@@ -1,20 +1,32 @@
 # Massscriber
 
-Massscriber, `faster-whisper` uzerine kurulu yerel bir Python ses transkripsiyon uygulamasidir. Ucretsizdir, sure siniri yoktur ve internet uzerinden API kullanmadan kendi bilgisayarinda calisir.
+[![CI](https://github.com/BarryAllen53/massscriber/actions/workflows/ci.yml/badge.svg)](https://github.com/BarryAllen53/massscriber/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-## Neden bu yapi?
+Massscriber is a local-first audio transcription app built on top of `faster-whisper`.
+It is designed for people who want:
 
-- `large-v3`: en yuksek dogruluk icin
-- `turbo`: `large-v3` tabanli, cok daha hizli, kalite kaybi genelde kucuk
-- `tiny` / `base`: daha zayif sistemlerde hizli denemeler icin
-- `faster-whisper`: orijinal Whisper'a gore daha hizli calisir ve Windows'ta pratik kullanimi daha kolaydir
-- `Gradio` arayuzu: surukle-birak mantiginda kolay kullanim
+- no paid API dependency
+- no upload requirement for private recordings
+- unlimited local processing
+- strong multilingual transcription quality
+- both a simple UI and a scriptable CLI
 
-Not: "Tamamen hatasiz" transkripsiyon bugun pratikte mumkun degil. Ama yerel ve ucretsiz tarafta en guclu seceneklerden biri bu yapi.
+## Highlights
 
-## Desteklenen dosyalar
+- Local transcription with `faster-whisper`
+- Multilingual speech-to-text with automatic language detection
+- Batch processing for multiple audio or video files
+- Gradio UI for drag-and-drop use
+- CLI mode for automation and power users
+- Export formats: `txt`, `srt`, `vtt`, `json`
+- Quality-first model option: `large-v3`
+- Speed-first model option: `turbo`
 
-Arayuzde su uzantilar dogrudan tanimli:
+## Supported Inputs
+
+The UI currently accepts:
 
 - `.mp3`
 - `.wav`
@@ -26,19 +38,29 @@ Arayuzde su uzantilar dogrudan tanimli:
 - `.mp4`
 - `.mkv`
 
-`faster-whisper`, altta medya cozumu icin kendi paketleriyle birlikte gelir; bu nedenle klasik `ffmpeg` kurulumu cogunlukla gerekmez.
+`faster-whisper` handles media decoding through its own stack, so a manual `ffmpeg` install is usually not required.
 
-## Kurulum
+## Model Guidance
 
-### 1. Otomatik kurulum
+| Model | Best for | Notes |
+| --- | --- | --- |
+| `large-v3` | Highest accuracy | Best default for serious transcription work |
+| `turbo` | Fastest practical transcription | Great speed/quality balance |
+| `medium` | Mid-range systems | Useful fallback for lower VRAM devices |
+| `small`, `base`, `tiny` | Lightweight testing | Faster, but lower accuracy |
 
-Windows'ta:
+Important note: no speech recognition model is perfectly error-free. For a fully free and local workflow, `large-v3` is one of the strongest practical choices available today.
+
+## Quick Start
+
+### Windows helper scripts
 
 ```bat
 install.bat
+start_ui.bat
 ```
 
-### 2. Elle kurulum
+### Manual setup
 
 ```powershell
 python -m venv .venv
@@ -47,72 +69,107 @@ python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
-## Uygulamayi baslatma
+## Run the App
 
-### Arayuz
-
-```bat
-start_ui.bat
-```
-
-veya:
+### Launch the UI
 
 ```powershell
 .venv\Scripts\activate
 python app.py
 ```
 
-Arayuz varsayilan olarak `http://127.0.0.1:7860` adresinde acilir.
+The default UI address is `http://127.0.0.1:7860`.
 
-### Komut satiri
+### Use the CLI
 
 ```powershell
 .venv\Scripts\activate
-python app.py transcribe "C:\sesler\ornek.mp3" --model large-v3 --formats txt srt json
+python app.py transcribe "C:\audio\meeting.mp3" --model large-v3 --formats txt srt json
 ```
 
-## Onerilen ayarlar
+You can also use the installed console entry point:
 
-### En yuksek kalite
+```powershell
+massscriber transcribe "C:\audio\meeting.mp3" --model turbo --formats txt srt
+```
+
+## Recommended Settings
+
+### Best quality
 
 - Model: `large-v3`
-- Beam Size: `5`
-- VAD: acik
-- Word timestamps: acik
+- Beam size: `5`
+- VAD: enabled
+- Word timestamps: enabled
 
-### En hizli kullanim
+### Best speed
 
 - Model: `turbo`
-- Device: `cuda` varsa GPU
+- Device: `cuda` when available
 - Compute type: `float16`
-- Batch size: `8` veya `16`
+- Batch size: `8` or `16`
 
-## Cikti dosyalari
+## Outputs
 
-Varsayilan olarak `outputs` klasorune su dosyalar yazilir:
+By default, transcripts are written to the `outputs` directory:
 
 - `txt`
 - `srt`
 - `json`
 
-Istersen arayuzden `vtt` de ekleyebilirsin.
+You can also enable `vtt` from the UI or CLI.
 
-## GPU notu
+## GPU Notes
 
-NVIDIA GPU kullanacaksan `faster-whisper` tarafinda CUDA kutuphaneleri gerekebilir. CPU ile de calisir, sadece daha yavas olur.
+If you use an NVIDIA GPU, `faster-whisper` may require CUDA runtime libraries on your machine.
+CPU mode works too; it is simply slower.
 
-`faster-whisper` resmi deposuna gore:
+According to the `faster-whisper` recommendations:
 
-- CPU icin `int8` kullanim oldukca verimlidir
-- GPU icin `float16` veya `int8_float16` kullanilabilir
+- `int8` is a good default for CPU execution
+- `float16` or `int8_float16` are good GPU options
 
-Eger CUDA tarafinda DLL hatasi alirsan resmi `faster-whisper` README'sindeki Windows kutuphane notlarini takip et.
+If you hit CUDA DLL issues on Windows, follow the Windows notes in the official `faster-whisper` documentation.
 
-## Ilk calistirma
+## First Run Behavior
 
-Ilk transkripsiyonda model dosyasi otomatik indirilir. `large-v3` buyuk bir model oldugu icin ilk acilista biraz zaman alabilir.
+The selected model is downloaded automatically on first use.
+For `large-v3`, the first run can take a while because the model is large.
 
-## Kaynaklar
+## Development
+
+### Run tests
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+### Local verification
+
+```powershell
+python -m py_compile app.py massscriber\__init__.py massscriber\types.py massscriber\exporters.py massscriber\transcriber.py massscriber\ui.py
+```
+
+## Versioning and Releases
+
+- Project version is defined in `massscriber.__version__`
+- Packaging reads the version dynamically from the package
+- Human-readable release history lives in [CHANGELOG.md](CHANGELOG.md)
+- Release steps are documented in [RELEASING.md](RELEASING.md)
+- Pushing a tag like `v0.1.0` triggers the GitHub release workflow
+
+## Roadmap
+
+- Speaker diarization
+- Better subtitle segmentation options
+- Packaged desktop builds
+- Folder watch / auto-transcribe workflows
+
+## License
+
+This project is released under the MIT License. See [LICENSE](LICENSE).
+
+## References
 
 - [SYSTRAN/faster-whisper](https://github.com/SYSTRAN/faster-whisper)
 - [openai/whisper](https://github.com/openai/whisper)

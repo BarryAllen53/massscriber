@@ -5,3 +5,7 @@ __pycache__/
 outputs/
 smoke_outputs/
 sample_test.wav
+build/
+dist/
+.pytest_cache/
+*.log
