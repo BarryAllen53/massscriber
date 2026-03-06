@@ -9,9 +9,11 @@ import threading
 from collections.abc import Iterator
 from pathlib import Path
 
+from massscriber.cloud import RemoteTranscriptionEngine
 from massscriber.diarization import assign_speakers_to_segments, diarize_audio
 from massscriber.exporters import export_result, sanitize_name, to_plain_text
 from massscriber.postprocess import apply_glossary_to_segments, apply_glossary_to_text, build_glossary_summary
+from massscriber.providers import provider_uses_remote_api
 from massscriber.types import SegmentData, TranscriptionResult, TranscriptionSettings, WordTiming
 
 logger = logging.getLogger(__name__)
@@ -197,6 +199,9 @@ class WhisperRuntime:
 
 
 class TranscriptionEngine:
+    def __init__(self) -> None:
+        self._remote_engine = RemoteTranscriptionEngine()
+
     @staticmethod
     def _build_transcribe_kwargs(
         settings: TranscriptionSettings,
@@ -249,6 +254,10 @@ class TranscriptionEngine:
         settings: TranscriptionSettings,
         output_dir: str | Path,
     ) -> Iterator[tuple[float, str, TranscriptionResult | None]]:
+        if provider_uses_remote_api(settings.provider):
+            yield from self._remote_engine.stream_file(audio_path, settings, output_dir)
+            return
+
         source = Path(audio_path).expanduser().resolve()
         yield 0.02, f"{source.name}: dosya hazirlaniyor", None
 
@@ -346,6 +355,7 @@ class TranscriptionEngine:
         result = TranscriptionResult(
             audio_path=source,
             base_name=base_name,
+            provider="local",
             model=settings.model,
             language=getattr(info, "language", settings.language),
             language_probability=getattr(info, "language_probability", None),
@@ -356,6 +366,7 @@ class TranscriptionEngine:
             text=text,
             segments=segments,
             output_files=output_files,
+            metadata={},
         )
         yield 0.97, f"{source.name}: ciktilar yaziliyor", None
         export_result(result, output_root, settings)

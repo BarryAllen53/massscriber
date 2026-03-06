@@ -28,6 +28,7 @@ class WatcherTests(TestCase):
             fake_result = TranscriptionResult(
                 audio_path=audio_path,
                 base_name="episode",
+                provider="local",
                 model="tiny",
                 language="en",
                 language_probability=0.99,
@@ -92,6 +93,7 @@ class WatcherTests(TestCase):
             fake_result = TranscriptionResult(
                 audio_path=audio_path,
                 base_name="meeting",
+                provider="local",
                 model="tiny",
                 language="tr",
                 language_probability=0.99,

@@ -15,6 +15,17 @@ from massscriber.library import (
     search_transcripts,
     update_review_status,
 )
+from massscriber.providers import (
+    PROVIDERS,
+    PROVIDER_LABELS,
+    get_provider_default_model,
+    get_provider_env_keys,
+    get_provider_models,
+    normalize_provider_name,
+    provider_supports_speaker_labels,
+    provider_supports_translation,
+    provider_uses_remote_api,
+)
 from massscriber.profiles import delete_profile, get_profile, list_profile_names, save_profile
 from massscriber.transcriber import SUPPORTED_MODELS, TranscriptionEngine
 from massscriber.types import TranscriptionSettings
@@ -24,8 +35,41 @@ APP_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT_DIR = APP_ROOT / "outputs"
 SUPPORTED_EXTENSIONS = (".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac", ".wma", ".mp4", ".mkv")
 REVIEW_STATUS_CHOICES = ["pending", "reviewed", "needs-edit", "approved"]
+PROVIDER_CHOICES = [f"{name} - {PROVIDER_LABELS[name]}" for name in PROVIDERS]
 
 logger = logging.getLogger(__name__)
+
+
+def render_provider_help(provider_name: str) -> str:
+    provider = normalize_provider_name(provider_name)
+    env_keys = ", ".join(get_provider_env_keys(provider)) or "yok"
+    translation = "evet" if provider_supports_translation(provider) else "hayir"
+    speakers = "evet" if provider_supports_speaker_labels(provider) else "hayir"
+    models = ", ".join(get_provider_models(provider))
+    return "\n".join(
+        [
+            "### Provider Bilgisi",
+            f"- Secili provider: `{provider}`",
+            f"- API key env: `{env_keys}`",
+            f"- Translation destegi: `{translation}`",
+            f"- Speaker label destegi: `{speakers}`",
+            f"- Modeller: `{models}`",
+        ]
+    )
+
+
+def update_provider_ui(provider_name: str):
+    provider = normalize_provider_name(provider_name)
+    model_choices = get_provider_models(provider)
+    default_model = get_provider_default_model(provider)
+    task_choices = ["transcribe", "translate"] if provider_supports_translation(provider) else ["transcribe"]
+    task_value = "transcribe" if "translate" not in task_choices else "transcribe"
+    return (
+        gr.update(choices=model_choices, value=default_model),
+        gr.update(choices=task_choices, value=task_value),
+        render_provider_help(provider),
+        gr.update(value=False, interactive=provider_supports_speaker_labels(provider)),
+    )
 
 
 def build_demo() -> gr.Blocks:
@@ -82,11 +126,17 @@ def build_demo() -> gr.Blocks:
                 )
 
         with gr.Row():
+            provider = gr.Dropdown(
+                choices=list(PROVIDERS),
+                value="local",
+                label="Provider",
+                info="local tamamen ucretsizdir. Diger secenekler resmi transcript API provider'laridir.",
+            )
             model = gr.Dropdown(
                 choices=list(SUPPORTED_MODELS),
                 value="large-v3",
                 label="Model",
-                info="En dogru secim large-v3, en hizli secim turbo.",
+                info="Provider degistiginde model listesi otomatik guncellenir.",
             )
             language = gr.Textbox(
                 value="auto",
@@ -141,6 +191,54 @@ def build_demo() -> gr.Blocks:
             )
 
         with gr.Accordion("Gelismis Ayarlar", open=False):
+            with gr.Row():
+                provider_api_key = gr.Textbox(
+                    value="",
+                    type="password",
+                    label="Provider API Key",
+                    placeholder="Bos birakirsan uygun ortam degiskeni kullanilir",
+                )
+                provider_base_url = gr.Textbox(
+                    value="",
+                    label="Provider Base URL (opsiyonel)",
+                    placeholder="Ozel gateway ya da proxy kullaniyorsan gir",
+                )
+            with gr.Row():
+                provider_timeout_seconds = gr.Slider(
+                    minimum=30,
+                    maximum=3600,
+                    step=30,
+                    value=900,
+                    label="API Timeout (sn)",
+                )
+                provider_poll_interval = gr.Slider(
+                    minimum=1,
+                    maximum=30,
+                    step=1,
+                    value=3,
+                    label="Polling Araligi (sn)",
+                )
+                provider_smart_format = gr.Checkbox(
+                    value=True,
+                    label="Provider Smart Format / Formatting",
+                )
+            with gr.Row():
+                provider_speaker_labels = gr.Checkbox(
+                    value=False,
+                    label="Provider Speaker Labels",
+                )
+                provider_keep_raw_response = gr.Checkbox(
+                    value=False,
+                    label="Raw API Response'u JSON'a ekle",
+                )
+            provider_keywords = gr.Textbox(
+                value="",
+                lines=3,
+                label="Provider Keywords / Word Boost",
+                placeholder="Her satira bir keyword yaz. Destekleyen provider'larda boost edilir.",
+            )
+            provider_status = gr.Markdown(render_provider_help("local"))
+
             with gr.Row():
                 temperature = gr.Slider(
                     minimum=0.0,
@@ -248,6 +346,7 @@ def build_demo() -> gr.Blocks:
         result_table = gr.Dataframe(
             headers=[
                 "Dosya",
+                "Provider",
                 "Dil",
                 "Sure (sn)",
                 "Segment",
@@ -255,7 +354,7 @@ def build_demo() -> gr.Blocks:
                 "Cihaz",
                 "Ciktilar",
             ],
-            datatype=["str", "str", "number", "number", "str", "str", "str"],
+            datatype=["str", "str", "str", "number", "number", "str", "str", "str"],
             interactive=False,
             wrap=True,
             label="Sonuclar",
@@ -360,8 +459,8 @@ def build_demo() -> gr.Blocks:
                 library_refresh_button = gr.Button("Sonuclari Yenile")
             library_summary = gr.Textbox(label="Library Ozet", lines=2, interactive=False)
             library_table = gr.Dataframe(
-                headers=["ID", "Dil", "Model", "Status", "Reviewed", "Snippet"],
-                datatype=["str", "str", "str", "str", "str", "str"],
+                headers=["ID", "Provider", "Dil", "Model", "Status", "Reviewed", "Snippet"],
+                datatype=["str", "str", "str", "str", "str", "str", "str"],
                 interactive=False,
                 wrap=True,
                 label="Transcript Sonuclari",
@@ -400,6 +499,7 @@ def build_demo() -> gr.Blocks:
                 local_paths,
                 folder_path,
                 scan_recursive,
+                provider,
                 model,
                 language,
                 task,
@@ -410,6 +510,14 @@ def build_demo() -> gr.Blocks:
                 batch_size,
                 vad_filter,
                 word_timestamps,
+                provider_api_key,
+                provider_base_url,
+                provider_timeout_seconds,
+                provider_poll_interval,
+                provider_smart_format,
+                provider_speaker_labels,
+                provider_keywords,
+                provider_keep_raw_response,
                 temperature,
                 vad_min_silence_ms,
                 cpu_threads,
@@ -447,6 +555,7 @@ def build_demo() -> gr.Blocks:
                 watch_poll_interval,
                 watch_stable_seconds,
                 watch_cycles,
+                provider,
                 model,
                 language,
                 task,
@@ -457,6 +566,14 @@ def build_demo() -> gr.Blocks:
                 batch_size,
                 vad_filter,
                 word_timestamps,
+                provider_api_key,
+                provider_base_url,
+                provider_timeout_seconds,
+                provider_poll_interval,
+                provider_smart_format,
+                provider_speaker_labels,
+                provider_keywords,
+                provider_keep_raw_response,
                 temperature,
                 vad_min_silence_ms,
                 cpu_threads,
@@ -486,6 +603,7 @@ def build_demo() -> gr.Blocks:
             inputs=[
                 profile_name,
                 saved_profile,
+                provider,
                 model,
                 language,
                 task,
@@ -496,6 +614,14 @@ def build_demo() -> gr.Blocks:
                 batch_size,
                 vad_filter,
                 word_timestamps,
+                provider_api_key,
+                provider_base_url,
+                provider_timeout_seconds,
+                provider_poll_interval,
+                provider_smart_format,
+                provider_speaker_labels,
+                provider_keywords,
+                provider_keep_raw_response,
                 temperature,
                 vad_min_silence_ms,
                 cpu_threads,
@@ -527,6 +653,7 @@ def build_demo() -> gr.Blocks:
             outputs=[
                 saved_profile,
                 profile_name,
+                provider,
                 model,
                 language,
                 task,
@@ -537,6 +664,14 @@ def build_demo() -> gr.Blocks:
                 batch_size,
                 vad_filter,
                 word_timestamps,
+                provider_api_key,
+                provider_base_url,
+                provider_timeout_seconds,
+                provider_poll_interval,
+                provider_smart_format,
+                provider_speaker_labels,
+                provider_keywords,
+                provider_keep_raw_response,
                 temperature,
                 vad_min_silence_ms,
                 cpu_threads,
@@ -559,6 +694,7 @@ def build_demo() -> gr.Blocks:
                 watch_poll_interval,
                 watch_stable_seconds,
                 watch_cycles,
+                provider_status,
                 profile_status,
             ],
         )
@@ -594,6 +730,12 @@ def build_demo() -> gr.Blocks:
                 review_apply_visible,
             ],
             outputs=[library_table, library_summary, library_preview, review_status_log],
+        )
+
+        provider.change(
+            fn=update_provider_ui,
+            inputs=[provider],
+            outputs=[model, task, provider_status, provider_speaker_labels],
         )
 
         demo.queue(status_update_rate=1, default_concurrency_limit=1, max_size=8)
@@ -680,6 +822,7 @@ def clear_ui():
 
 
 def serialize_profile_payload(
+    provider: str,
     model: str,
     language: str,
     task: str,
@@ -690,6 +833,14 @@ def serialize_profile_payload(
     batch_size: int,
     vad_filter: bool,
     word_timestamps: bool,
+    provider_api_key: str,
+    provider_base_url: str,
+    provider_timeout_seconds: float,
+    provider_poll_interval: float,
+    provider_smart_format: bool,
+    provider_speaker_labels: bool,
+    provider_keywords: str,
+    provider_keep_raw_response: bool,
     temperature: float,
     vad_min_silence_ms: int,
     cpu_threads: int,
@@ -714,6 +865,7 @@ def serialize_profile_payload(
     watch_cycles: int,
 ) -> dict[str, object]:
     return {
+        "provider": provider,
         "model": model,
         "language": language,
         "task": task,
@@ -724,6 +876,14 @@ def serialize_profile_payload(
         "batch_size": int(batch_size),
         "vad_filter": bool(vad_filter),
         "word_timestamps": bool(word_timestamps),
+        "provider_api_key": provider_api_key,
+        "provider_base_url": provider_base_url,
+        "provider_timeout_seconds": float(provider_timeout_seconds),
+        "provider_poll_interval": float(provider_poll_interval),
+        "provider_smart_format": bool(provider_smart_format),
+        "provider_speaker_labels": bool(provider_speaker_labels),
+        "provider_keywords": provider_keywords,
+        "provider_keep_raw_response": bool(provider_keep_raw_response),
         "temperature": float(temperature),
         "vad_min_silence_ms": int(vad_min_silence_ms),
         "cpu_threads": int(cpu_threads),
@@ -752,6 +912,7 @@ def serialize_profile_payload(
 def save_current_profile(
     profile_name: str,
     selected_profile: str | None,
+    provider: str,
     model: str,
     language: str,
     task: str,
@@ -762,6 +923,14 @@ def save_current_profile(
     batch_size: int,
     vad_filter: bool,
     word_timestamps: bool,
+    provider_api_key: str,
+    provider_base_url: str,
+    provider_timeout_seconds: float,
+    provider_poll_interval: float,
+    provider_smart_format: bool,
+    provider_speaker_labels: bool,
+    provider_keywords: str,
+    provider_keep_raw_response: bool,
     temperature: float,
     vad_min_silence_ms: int,
     cpu_threads: int,
@@ -790,6 +959,7 @@ def save_current_profile(
         raise gr.Error("Profil kaydetmek icin bir ad girmelisin.")
 
     payload = serialize_profile_payload(
+        provider,
         model,
         language,
         task,
@@ -800,6 +970,14 @@ def save_current_profile(
         batch_size,
         vad_filter,
         word_timestamps,
+        provider_api_key,
+        provider_base_url,
+        provider_timeout_seconds,
+        provider_poll_interval,
+        provider_smart_format,
+        provider_speaker_labels,
+        provider_keywords,
+        provider_keep_raw_response,
         temperature,
         vad_min_silence_ms,
         cpu_threads,
@@ -842,6 +1020,7 @@ def load_saved_profile(profile_name: str | None):
     return (
         gr.update(choices=list_profile_names(), value=effective_name),
         effective_name,
+        value("provider", "local"),
         value("model", "large-v3"),
         value("language", "auto"),
         value("task", "transcribe"),
@@ -852,6 +1031,14 @@ def load_saved_profile(profile_name: str | None):
         value("batch_size", 8),
         value("vad_filter", True),
         value("word_timestamps", True),
+        value("provider_api_key", ""),
+        value("provider_base_url", ""),
+        value("provider_timeout_seconds", 900),
+        value("provider_poll_interval", 3),
+        value("provider_smart_format", True),
+        value("provider_speaker_labels", False),
+        value("provider_keywords", ""),
+        value("provider_keep_raw_response", False),
         value("temperature", 0.0),
         value("vad_min_silence_ms", 500),
         value("cpu_threads", 0),
@@ -874,6 +1061,7 @@ def load_saved_profile(profile_name: str | None):
         value("watch_poll_interval", 5.0),
         value("watch_stable_seconds", 10.0),
         value("watch_cycles", 6),
+        render_provider_help(str(value("provider", "local"))),
         f"[OK] Profil yuklendi: {effective_name}",
     )
 
@@ -945,6 +1133,7 @@ def run_batch(
     local_paths_text: str,
     folder_path: str,
     recursive_scan: bool,
+    provider: str,
     model: str,
     language: str,
     task: str,
@@ -955,6 +1144,14 @@ def run_batch(
     batch_size: int,
     vad_filter: bool,
     word_timestamps: bool,
+    provider_api_key: str,
+    provider_base_url: str,
+    provider_timeout_seconds: float,
+    provider_poll_interval: float,
+    provider_smart_format: bool,
+    provider_speaker_labels: bool,
+    provider_keywords: str,
+    provider_keep_raw_response: bool,
     temperature: float,
     vad_min_silence_ms: int,
     cpu_threads: int,
@@ -983,8 +1180,20 @@ def run_batch(
         )
 
     normalized_language = None if language.strip().lower() == "auto" else language.strip()
+    normalized_provider = normalize_provider_name(provider)
+    resolved_model = model.strip() or get_provider_default_model(normalized_provider)
     settings = TranscriptionSettings(
-        model=model,
+        provider=normalized_provider,
+        model=resolved_model,
+        provider_model=resolved_model,
+        provider_api_key=provider_api_key.strip() or None,
+        provider_base_url=provider_base_url.strip() or None,
+        provider_timeout_seconds=float(provider_timeout_seconds),
+        provider_poll_interval=float(provider_poll_interval),
+        provider_smart_format=bool(provider_smart_format),
+        provider_speaker_labels=bool(provider_speaker_labels),
+        provider_keywords=provider_keywords,
+        provider_keep_raw_response=bool(provider_keep_raw_response),
         language=normalized_language,
         task=task,
         device=device,
@@ -1016,7 +1225,7 @@ def run_batch(
     preview_chunks: list[str] = []
     generated_files: list[str] = []
     log_lines: list[str] = warnings + [
-        f"[INFO] {len(resolved_files)} dosya siraya alindi. model={model}, gorev={task}"
+        f"[INFO] {len(resolved_files)} dosya siraya alindi. provider={normalized_provider}, model={resolved_model}, gorev={task}"
     ]
     sticky_messages: set[str] = set(log_lines)
     current_status = "[CALISIYOR] Kuyruk hazirlaniyor"
@@ -1079,6 +1288,7 @@ def run_batch(
         table_rows.append(
             [
                 source.name,
+                result.provider,
                 result.language or "unknown",
                 round(result.duration or 0, 2),
                 len(result.segments),
@@ -1115,6 +1325,7 @@ def run_watch_panel(
     watch_poll_interval: float,
     watch_stable_seconds: float,
     watch_cycles: int,
+    provider: str,
     model: str,
     language: str,
     task: str,
@@ -1125,6 +1336,14 @@ def run_watch_panel(
     batch_size: int,
     vad_filter: bool,
     word_timestamps: bool,
+    provider_api_key: str,
+    provider_base_url: str,
+    provider_timeout_seconds: float,
+    provider_poll_interval: float,
+    provider_smart_format: bool,
+    provider_speaker_labels: bool,
+    provider_keywords: str,
+    provider_keep_raw_response: bool,
     temperature: float,
     vad_min_silence_ms: int,
     cpu_threads: int,
@@ -1145,8 +1364,20 @@ def run_watch_panel(
     if not watch_folder_path.strip():
         raise gr.Error("Izlenecek klasor yolunu girmelisin.")
 
+    normalized_provider = normalize_provider_name(provider)
+    resolved_model = model.strip() or get_provider_default_model(normalized_provider)
     settings = TranscriptionSettings(
-        model=model,
+        provider=normalized_provider,
+        model=resolved_model,
+        provider_model=resolved_model,
+        provider_api_key=provider_api_key.strip() or None,
+        provider_base_url=provider_base_url.strip() or None,
+        provider_timeout_seconds=float(provider_timeout_seconds),
+        provider_poll_interval=float(provider_poll_interval),
+        provider_smart_format=bool(provider_smart_format),
+        provider_speaker_labels=bool(provider_speaker_labels),
+        provider_keywords=provider_keywords,
+        provider_keep_raw_response=bool(provider_keep_raw_response),
         language=None if language.strip().lower() == "auto" else language.strip(),
         task=task,
         device=device,
@@ -1175,6 +1406,7 @@ def run_watch_panel(
 
     log_lines = [
         f"[INFO] Watch baslatildi: {watch_folder_path}",
+        f"[INFO] Provider: {normalized_provider}, model: {resolved_model}",
         f"[INFO] UI dongu sayisi: {int(watch_cycles)}",
     ]
     target_output_dir = output_dir.strip() or str(DEFAULT_OUTPUT_DIR)
@@ -1234,7 +1466,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def add_common_transcription_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--model", default="large-v3", choices=SUPPORTED_MODELS)
+    parser.add_argument("--provider", default="local", choices=list(PROVIDERS))
+    parser.add_argument(
+        "--model",
+        default="",
+        help=(
+            "Provider modeli. local icin desteklenen modeller: "
+            + ", ".join(SUPPORTED_MODELS)
+        ),
+    )
     parser.add_argument("--language", default="auto")
     parser.add_argument("--task", default="transcribe", choices=["transcribe", "translate"])
     parser.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
@@ -1270,6 +1510,14 @@ def add_common_transcription_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--glossary-text", default="")
     parser.add_argument("--glossary-case-sensitive", action="store_true")
     parser.add_argument("--glossary-phrase-mode", action="store_true")
+    parser.add_argument("--provider-api-key", default="")
+    parser.add_argument("--provider-base-url", default="")
+    parser.add_argument("--provider-timeout-seconds", type=float, default=900.0)
+    parser.add_argument("--provider-poll-interval", type=float, default=3.0)
+    parser.add_argument("--provider-no-smart-format", action="store_true")
+    parser.add_argument("--provider-speaker-labels", action="store_true")
+    parser.add_argument("--provider-keywords", default="")
+    parser.add_argument("--provider-keep-raw-response", action="store_true")
 
 
 def build_settings_from_args(args: argparse.Namespace) -> TranscriptionSettings:
@@ -1277,8 +1525,20 @@ def build_settings_from_args(args: argparse.Namespace) -> TranscriptionSettings:
     glossary_file = getattr(args, "glossary_file", "") or ""
     if glossary_file:
         glossary_text = Path(glossary_file).expanduser().read_text(encoding="utf-8")
+    normalized_provider = normalize_provider_name(getattr(args, "provider", "local"))
+    resolved_model = (getattr(args, "model", "") or "").strip() or get_provider_default_model(normalized_provider)
     return TranscriptionSettings(
-        model=args.model,
+        provider=normalized_provider,
+        model=resolved_model,
+        provider_model=resolved_model,
+        provider_api_key=getattr(args, "provider_api_key", "") or None,
+        provider_base_url=getattr(args, "provider_base_url", "") or None,
+        provider_timeout_seconds=float(getattr(args, "provider_timeout_seconds", 900.0)),
+        provider_poll_interval=float(getattr(args, "provider_poll_interval", 3.0)),
+        provider_smart_format=not bool(getattr(args, "provider_no_smart_format", False)),
+        provider_speaker_labels=bool(getattr(args, "provider_speaker_labels", False)),
+        provider_keywords=getattr(args, "provider_keywords", "") or "",
+        provider_keep_raw_response=bool(getattr(args, "provider_keep_raw_response", False)),
         language=None if args.language.lower() == "auto" else args.language,
         task=args.task,
         device=args.device,
@@ -1321,6 +1581,7 @@ def run_cli(args: argparse.Namespace) -> int:
         if result is None:
             raise RuntimeError(f"Transcription finished without a result: {raw_file}")
         print(f"[OK] {Path(raw_file).name}")
+        print(f"  Provider: {result.provider}")
         print(f"  Language: {result.language or 'unknown'}")
         print(f"  Duration: {round(result.duration or 0, 2)} sec")
         print(f"  Outputs : {', '.join(str(path) for path in result.output_files.values())}")

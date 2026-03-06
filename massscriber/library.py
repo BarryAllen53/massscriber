@@ -14,6 +14,7 @@ class TranscriptRecord:
     transcript_path: Path
     text: str
     audio_path: str
+    provider: str
     language: str
     model: str
     status: str = "pending"
@@ -64,6 +65,7 @@ def index_transcripts(output_dir: str | Path) -> list[TranscriptRecord]:
             transcript_path=txt_file.resolve(),
             text=txt_file.read_text(encoding="utf-8").strip(),
             audio_path="",
+            provider="local",
             language="unknown",
             model="unknown",
             status=str(review.get("status", "pending")),
@@ -92,6 +94,7 @@ def search_transcripts(
                 record.transcript_id,
                 record.text,
                 record.audio_path,
+                record.provider,
                 record.language,
                 record.model,
                 record.note,
@@ -116,6 +119,7 @@ def records_to_rows(records: list[TranscriptRecord]) -> list[list[str]]:
         rows.append(
             [
                 record.transcript_id,
+                record.provider or "local",
                 record.language or "unknown",
                 record.model or "unknown",
                 record.status,
@@ -133,6 +137,7 @@ def build_preview(records: list[TranscriptRecord]) -> str:
     lines = [
         f"ID: {record.transcript_id}",
         f"Status: {record.status}",
+        f"Provider: {record.provider or 'local'}",
         f"Language: {record.language or 'unknown'}",
         f"Model: {record.model or 'unknown'}",
     ]
@@ -187,6 +192,7 @@ def _record_from_json(
         transcript_path=json_file.resolve(),
         text=str(payload.get("text", "")).strip(),
         audio_path=str(payload.get("audio_path", "")),
+        provider=str(payload.get("provider", "local") or "local"),
         language=str(payload.get("language", "unknown") or "unknown"),
         model=str(payload.get("model", "unknown") or "unknown"),
         status=str(review.get("status", "pending")),

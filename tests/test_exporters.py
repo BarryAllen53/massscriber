@@ -22,6 +22,7 @@ class ExporterTests(unittest.TestCase):
         result = TranscriptionResult(
             audio_path=__file__,
             base_name="demo",
+            provider="local",
             model="tiny",
             language="en",
             language_probability=0.99,
@@ -43,6 +44,7 @@ class ExporterTests(unittest.TestCase):
         result = TranscriptionResult(
             audio_path=__file__,
             base_name="demo",
+            provider="local",
             model="tiny",
             language="en",
             language_probability=0.99,
@@ -84,6 +86,7 @@ class ExporterTests(unittest.TestCase):
         result = TranscriptionResult(
             audio_path=__file__,
             base_name="demo",
+            provider="local",
             model="tiny",
             language="en",
             language_probability=0.99,

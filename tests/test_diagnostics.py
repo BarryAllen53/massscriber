@@ -26,12 +26,17 @@ class DiagnosticsTests(TestCase):
                 "diarization_available": False,
                 "output_dir": "D:\\outputs",
                 "output_writable": True,
+                "providers": {
+                    "local": {"env_keys": [], "configured": True},
+                    "openai": {"env_keys": ["OPENAI_API_KEY"], "configured": False},
+                },
             }
         )
 
         self.assertIn("Sistem Durumu", markdown)
         self.assertIn("CUDA", markdown)
         self.assertIn("Desktop build araci", markdown)
+        self.assertIn("openai", markdown)
 
     def test_detect_system_status_handles_missing_optional_modules(self):
         with TemporaryDirectory() as tmpdir, patch(

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import platform
 import shutil
+import os
 from pathlib import Path
 
+from massscriber.providers import PROVIDERS, get_provider_env_keys, get_provider_models
 from massscriber.transcriber import CONFIGURED_WINDOWS_CUDA_DIRS
 
 
@@ -30,6 +32,14 @@ def detect_system_status(output_dir: str | Path | None = None) -> dict[str, obje
     nvidia_smi = shutil.which("nvidia-smi")
     pyinstaller_available = shutil.which("pyinstaller") is not None
     diarization_available = _module_available("pyannote.audio")
+    provider_status: dict[str, dict[str, object]] = {}
+    for provider in PROVIDERS:
+        env_keys = get_provider_env_keys(provider)
+        provider_status[provider] = {
+            "env_keys": list(env_keys),
+            "configured": any(bool(os.getenv(env_name, "").strip()) for env_name in env_keys),
+            "models": get_provider_models(provider),
+        }
 
     return {
         "python": platform.python_version(),
@@ -41,6 +51,7 @@ def detect_system_status(output_dir: str | Path | None = None) -> dict[str, obje
         "diarization_available": diarization_available,
         "output_dir": str(output_root) if output_root else "",
         "output_writable": output_writable,
+        "providers": provider_status,
     }
 
 
@@ -64,6 +75,18 @@ def render_system_status(status: dict[str, object]) -> str:
     ]
     if status["output_dir"]:
         lines.append(f"- Cikti klasoru: `{status['output_dir']}` ({output_status})")
+    provider_details = status.get("providers", {})
+    if isinstance(provider_details, dict):
+        lines.append("- Provider hazirligi:")
+        for provider_name, provider_info in provider_details.items():
+            if not isinstance(provider_info, dict):
+                continue
+            if provider_name == "local":
+                lines.append(f"  - `{provider_name}`: her zaman hazir")
+                continue
+            env_keys = ", ".join(provider_info.get("env_keys", [])) or "env yok"
+            configured = "hazir" if provider_info.get("configured") else "key yok"
+            lines.append(f"  - `{provider_name}`: {configured} ({env_keys})")
     return "\n".join(lines)
 
 

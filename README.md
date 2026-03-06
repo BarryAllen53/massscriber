@@ -27,6 +27,10 @@ It is designed for people who want:
 - Glossary-aware transcript cleanup for names, brands, and recurring corrections
 - Saved workflow profiles for watch, glossary, and transcription presets
 - Transcript library search with batch review status tracking
+- Multi-provider transcription engine for local and hosted APIs
+- OpenAI, Groq, Deepgram, AssemblyAI, and ElevenLabs integrations
+- Provider-specific API key, timeout, polling, speaker-label, and smart-format controls
+- JSON outputs with provider metadata and optional raw API responses
 - Built-in system health panel plus `doctor` CLI command
 - Live stage-by-stage progress for long-running transcriptions
 - CLI mode for automation and power users
@@ -62,6 +66,65 @@ The UI currently accepts:
 | `small`, `base`, `tiny` | Lightweight testing | Faster, but lower accuracy |
 
 Important note: no speech recognition model is perfectly error-free. For a fully free and local workflow, `large-v3` is one of the strongest practical choices available today.
+
+## Providers
+
+Massscriber now supports both local and hosted transcription engines through one shared UI and CLI.
+
+| Provider | Type | API key env | Notes |
+| --- | --- | --- | --- |
+| `local` | Free / local | none | Uses `faster-whisper`, unlimited runtime, best privacy |
+| `openai` | Paid API | `OPENAI_API_KEY` | Supports transcription and translation |
+| `groq` | Hosted API | `GROQ_API_KEY` | Very fast hosted Whisper-style transcription |
+| `deepgram` | Hosted API | `DEEPGRAM_API_KEY` | Strong utterance and speaker metadata support |
+| `assemblyai` | Hosted API | `ASSEMBLYAI_API_KEY` | Async transcription flow with rich review metadata |
+| `elevenlabs` | Hosted API | `ELEVENLABS_API_KEY` | Hosted Scribe models with speaker-aware options |
+
+Massscriber normalizes all providers into the same downstream features:
+
+- `txt`, `srt`, `vtt`, `json`
+- glossary cleanup
+- transcript library indexing
+- review-state tracking
+- workflow profiles
+- folder watch automation
+
+## Provider Examples
+
+### OpenAI
+
+```powershell
+$env:OPENAI_API_KEY="sk-..."
+massscriber transcribe "C:\audio\meeting.mp3" --provider openai --model whisper-1 --formats txt srt json
+```
+
+### Groq
+
+```powershell
+$env:GROQ_API_KEY="gsk_..."
+massscriber transcribe "C:\audio\episode.mp3" --provider groq --model whisper-large-v3-turbo --formats txt json
+```
+
+### Deepgram
+
+```powershell
+$env:DEEPGRAM_API_KEY="dg_..."
+massscriber transcribe "C:\audio\call.wav" --provider deepgram --model nova-3 --provider-speaker-labels --formats txt srt json
+```
+
+### AssemblyAI
+
+```powershell
+$env:ASSEMBLYAI_API_KEY="..."
+massscriber transcribe "C:\audio\interview.mp3" --provider assemblyai --provider-speaker-labels --provider-keywords "Massscriber`nOpenAI"
+```
+
+### ElevenLabs
+
+```powershell
+$env:ELEVENLABS_API_KEY="..."
+massscriber transcribe "C:\audio\voice-note.m4a" --provider elevenlabs --model scribe_v1 --provider-speaker-labels
+```
 
 ## Quick Start
 
@@ -107,6 +170,21 @@ The UI also now includes:
 - glossary rules for post-transcription cleanup
 - saved workflow profiles for repeatable presets
 - a transcript library panel for search and batch review
+- provider selection with API-aware hosted settings
+
+### API-aware settings
+
+Provider mode adds these controls in both UI and CLI:
+
+- provider selector
+- provider model selection
+- API key or env-var fallback
+- base URL override for gateways and proxies
+- timeout and polling controls
+- smart formatting toggle
+- speaker label toggle for supported APIs
+- keyword / word-boost field
+- optional raw response capture into JSON output
 
 ### Use the CLI
 
@@ -139,6 +217,12 @@ massscriber watch "C:\audio\incoming" --model turbo --archive-dir "C:\audio\done
 massscriber doctor
 ```
 
+### Cloud transcription from the CLI
+
+```powershell
+massscriber transcribe "C:\audio\sales-call.mp3" --provider deepgram --model nova-3 --provider-speaker-labels --formats txt srt json
+```
+
 ## Workflow Profiles
 
 If you reuse the same combinations of model, glossary rules, watch folder, or subtitle settings, save them as a profile in the UI.
@@ -166,10 +250,13 @@ The UI now includes a transcript library panel that scans your output directory 
 
 This gives you a lightweight local review workflow without needing a separate database service.
 
+Provider-backed transcripts also land in the same library, so your local and hosted runs stay in one searchable archive.
+
 ## Recommended Settings
 
 ### Best quality
 
+- Provider: `local`
 - Model: `large-v3`
 - Beam size: `5`
 - VAD: enabled
@@ -177,10 +264,18 @@ This gives you a lightweight local review workflow without needing a separate da
 
 ### Best speed
 
+- Provider: `groq` or `local`
 - Model: `turbo`
 - Device: `cuda` when available
 - Compute type: `float16`
 - Batch size: `8` or `16`
+
+### Hosted API workflows
+
+- Use `openai` when you need OpenAI-hosted transcription and translation
+- Use `groq` when you want very fast hosted Whisper-style transcription
+- Use `deepgram`, `assemblyai`, or `elevenlabs` when you want hosted metadata and speaker-aware workflows
+- For OpenAI and Groq, keep large files under the provider upload limit; use `local`, `deepgram`, or `assemblyai` for bigger media
 
 ### Better subtitles
 
@@ -199,7 +294,7 @@ Example:
 ```text
 Open AI => OpenAI
 Chat GPT => ChatGPT
-Baris Manco => Barış Manço
+Baris Mancho => Baris Manco
 ```
 
 ### Experimental speaker diarization
@@ -225,6 +320,7 @@ By default, transcripts are written to the `outputs` directory:
 You can also enable `vtt` from the UI or CLI.
 
 SRT and VTT exports now use configurable subtitle regrouping, so long whisper segments can be re-cut into shorter subtitle cues.
+JSON outputs also include provider information, remote request identifiers, and optional raw API response metadata.
 
 ## GPU Notes
 
@@ -293,6 +389,7 @@ python -m py_compile app.py massscriber\__init__.py massscriber\types.py massscr
 - Glossary-aware cleanup and a built-in doctor/status surface are now part of the core app.
 - Saved workflow profiles are now available for recurring transcription setups.
 - Transcript library search and batch review are now built into the UI.
+- Multi-provider hosted API transcription is now integrated across UI, CLI, watch mode, profiles, and exports.
 - Desktop packaging now has a local build script and a Windows artifact workflow.
 
 ## Next Roadmap
@@ -302,6 +399,8 @@ python -m py_compile app.py massscriber\__init__.py massscriber\types.py massscr
 - Add project-level transcript libraries for large collections
 - Add persistent batch actions such as export queues and review assignments
 - Add richer transcript editing and glossary-assisted correction workflows
+- Add provider failover chains and cost/performance routing presets
+- Add remote URL ingestion for providers that support direct media fetch
 
 ## License
 
@@ -311,3 +410,9 @@ This project is released under the MIT License. See [LICENSE](LICENSE).
 
 - [SYSTRAN/faster-whisper](https://github.com/SYSTRAN/faster-whisper)
 - [openai/whisper](https://github.com/openai/whisper)
+- [OpenAI speech-to-text docs](https://platform.openai.com/docs/guides/speech-to-text)
+- [Groq speech-to-text docs](https://console.groq.com/docs/speech-to-text)
+- [Deepgram pre-recorded audio docs](https://developers.deepgram.com/docs/pre-recorded-audio)
+- [AssemblyAI speech-to-text docs](https://www.assemblyai.com/docs/speech-to-text)
+- [ElevenLabs speech-to-text docs](https://elevenlabs.io/docs/capabilities/speech-to-text)
+

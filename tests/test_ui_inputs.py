@@ -12,6 +12,8 @@ class UiInputTests(TestCase):
             [
                 "transcribe",
                 "demo.mp3",
+                "--provider",
+                "openai",
                 "--subtitle-max-chars",
                 "48",
                 "--subtitle-max-duration",
@@ -26,11 +28,20 @@ class UiInputTests(TestCase):
                 "--glossary-text",
                 "Open AI => OpenAI",
                 "--glossary-case-sensitive",
+                "--provider-api-key",
+                "sk-demo",
+                "--provider-base-url",
+                "https://proxy.example/v1",
+                "--provider-speaker-labels",
+                "--provider-keywords",
+                "OpenAI\nMassscriber",
+                "--provider-keep-raw-response",
             ]
         )
 
         settings = build_settings_from_args(args)
 
+        self.assertEqual(settings.provider, "openai")
         self.assertEqual(settings.subtitle_max_chars, 48)
         self.assertEqual(settings.subtitle_max_duration, 5.5)
         self.assertEqual(settings.subtitle_pause_threshold, 0.8)
@@ -39,6 +50,10 @@ class UiInputTests(TestCase):
         self.assertEqual(settings.diarization_token, "token-123")
         self.assertEqual(settings.glossary_text, "Open AI => OpenAI")
         self.assertTrue(settings.glossary_case_sensitive)
+        self.assertEqual(settings.provider_api_key, "sk-demo")
+        self.assertEqual(settings.provider_base_url, "https://proxy.example/v1")
+        self.assertTrue(settings.provider_speaker_labels)
+        self.assertTrue(settings.provider_keep_raw_response)
 
     def test_collect_input_files_combines_upload_manual_and_folder_sources(self):
         with TemporaryDirectory() as tmpdir:

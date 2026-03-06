@@ -6,8 +6,20 @@ The format is inspired by Keep a Changelog and the project follows Semantic Vers
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-06
+
 - Added saved workflow profiles in the UI for reusable transcription, glossary, subtitle, and watch presets.
 - Added a transcript library panel with text search, review-state filters, transcript previews, and batch review updates.
+- Added a multi-provider transcription layer covering local Faster-Whisper, OpenAI, Groq, Deepgram, AssemblyAI, and ElevenLabs.
+- Added hosted-provider controls to the UI and CLI for API keys, base URLs, timeout, polling, smart formatting, speaker labels, and keyword boosts.
+- Added provider-aware exports that include provider names, remote request identifiers, and optional raw API payloads in JSON output.
+- Added provider-aware diagnostics so the doctor panel shows environment-key readiness for each hosted API.
+- Added provider-aware transcript library indexing so local and cloud results can be searched and batch-reviewed together.
+- Added provider-aware workflow profiles so local and hosted transcription presets can be saved and reloaded.
+- Added hosted-provider parsing tests plus provider utility tests.
+- Added retry and timeout handling for transient hosted API failures.
+- Fixed transcript review and result tables so provider source is visible alongside model and language metadata.
+- Fixed CLI model selection so each provider now resolves to a sensible default model when `--model` is omitted.
 
 ## [0.2.0] - 2026-03-06
 

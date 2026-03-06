@@ -21,6 +21,7 @@ class LibraryTests(TestCase):
                 json.dumps(
                     {
                         "audio_path": "C:/audio/demo.mp3",
+                        "provider": "openai",
                         "language": "tr",
                         "model": "large-v3",
                         "text": "OpenAI ile test transcript",
@@ -34,6 +35,7 @@ class LibraryTests(TestCase):
 
         self.assertEqual(len(records), 1)
         self.assertIn("1 transcript", summary)
+        self.assertEqual(records[0].provider, "openai")
         self.assertEqual(records[0].language, "tr")
         self.assertEqual(len(records_to_rows(records)), 1)
 
@@ -44,6 +46,7 @@ class LibraryTests(TestCase):
                 json.dumps(
                     {
                         "audio_path": "C:/audio/demo.mp3",
+                        "provider": "local",
                         "language": "en",
                         "model": "turbo",
                         "text": "review me",

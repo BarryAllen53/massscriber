@@ -274,6 +274,7 @@ def build_vtt(result: TranscriptionResult, settings: TranscriptionSettings | Non
 def build_json(result: TranscriptionResult) -> str:
     payload = {
         "audio_path": str(result.audio_path),
+        "provider": result.provider,
         "model": result.model,
         "task": result.task,
         "language": result.language,
@@ -281,6 +282,9 @@ def build_json(result: TranscriptionResult) -> str:
         "duration_seconds": result.duration,
         "device": result.device,
         "compute_type": result.compute_type,
+        "provider_job_id": result.provider_job_id,
+        "provider_request_id": result.provider_request_id,
+        "metadata": result.metadata,
         "text": result.text,
         "segments": [asdict(segment) for segment in result.segments],
     }

@@ -31,7 +31,18 @@ class SegmentData:
 
 @dataclass(slots=True)
 class TranscriptionSettings:
+    provider: str = "local"
     model: str = "large-v3"
+    provider_model: str | None = None
+    provider_api_key: str | None = None
+    provider_base_url: str | None = None
+    provider_remote_url: str | None = None
+    provider_timeout_seconds: float = 900.0
+    provider_poll_interval: float = 3.0
+    provider_smart_format: bool = True
+    provider_speaker_labels: bool = False
+    provider_keywords: str = ""
+    provider_keep_raw_response: bool = False
     language: str | None = None
     task: TaskType = "transcribe"
     device: str = "auto"
@@ -62,6 +73,7 @@ class TranscriptionSettings:
 class TranscriptionResult:
     audio_path: Path
     base_name: str
+    provider: str
     model: str
     language: str | None
     language_probability: float | None
@@ -72,3 +84,6 @@ class TranscriptionResult:
     text: str
     segments: list[SegmentData]
     output_files: dict[str, Path]
+    provider_job_id: str | None = None
+    provider_request_id: str | None = None
+    metadata: dict[str, object] = field(default_factory=dict)
