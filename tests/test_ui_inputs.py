@@ -1,0 +1,58 @@
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest import TestCase
+
+from massscriber.ui import collect_input_files
+
+
+class UiInputTests(TestCase):
+    def test_collect_input_files_combines_upload_manual_and_folder_sources(self):
+        with TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            upload_file = root / "upload.mp3"
+            upload_file.write_bytes(b"upload")
+
+            manual_file = root / "manual.wav"
+            manual_file.write_bytes(b"manual")
+
+            folder = root / "batch"
+            folder.mkdir()
+            folder_file = folder / "folder.flac"
+            folder_file.write_bytes(b"folder")
+
+            nested_folder = folder / "nested"
+            nested_folder.mkdir()
+            nested_file = nested_folder / "nested.ogg"
+            nested_file.write_bytes(b"nested")
+
+            ignored = folder / "ignore.txt"
+            ignored.write_text("ignore", encoding="utf-8")
+
+            files, warnings = collect_input_files(
+                [str(upload_file)],
+                f'"{manual_file}"',
+                str(folder),
+                recursive_scan=True,
+            )
+
+        self.assertEqual(
+            [path.name for path in files],
+            ["upload.mp3", "manual.wav", "folder.flac", "nested.ogg"],
+        )
+        self.assertEqual(warnings, [])
+
+    def test_collect_input_files_reports_missing_or_unsupported_sources(self):
+        with TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            unsupported = root / "bad.txt"
+            unsupported.write_text("bad", encoding="utf-8")
+
+            files, warnings = collect_input_files(
+                None,
+                str(unsupported),
+                str(root / "missing-folder"),
+                recursive_scan=False,
+            )
+
+        self.assertEqual(files, [])
+        self.assertEqual(len(warnings), 2)

@@ -11,6 +11,7 @@ from massscriber.types import TranscriptionSettings
 
 APP_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT_DIR = APP_ROOT / "outputs"
+SUPPORTED_EXTENSIONS = (".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac", ".wma", ".mp4", ".mkv")
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,8 @@ def build_demo() -> gr.Blocks:
 
             `large-v3`: en yuksek dogruluk
             `turbo`: dogruluktan cok az odun verip cok daha hizli
+
+            Not: Tek ve buyuk dosyalarda ilerleme cubugu artik asama asama guncellenir.
             """
         )
 
@@ -34,7 +37,7 @@ def build_demo() -> gr.Blocks:
             files = gr.Files(
                 label="Ses Dosyalari",
                 file_count="multiple",
-                file_types=[".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac", ".wma", ".mp4", ".mkv"],
+                file_types=list(SUPPORTED_EXTENSIONS),
                 type="filepath",
             )
             preview = gr.Textbox(
@@ -43,6 +46,28 @@ def build_demo() -> gr.Blocks:
                 max_lines=30,
                 interactive=False,
             )
+
+        with gr.Accordion("Yerel Disk Modu", open=False):
+            gr.Markdown(
+                """
+                Browser upload yerine tam dosya yolu ya da klasor vererek dogrudan diskten okuyabilirsin.
+                Buyuk dosyalarda bu mod genelde daha stabildir.
+                """
+            )
+            local_paths = gr.Textbox(
+                label="Tam Dosya Yollari",
+                lines=5,
+                placeholder="Her satira bir tam yol yaz.\nC:\\Kayitlar\\toplanti-1.mp3\nD:\\Arsiv\\podcast.wav",
+            )
+            with gr.Row():
+                folder_path = gr.Textbox(
+                    label="Klasor Yolu",
+                    placeholder="C:\\Kayitlar\\UzunDosyalar",
+                )
+                scan_recursive = gr.Checkbox(
+                    value=True,
+                    label="Alt Klasorleri de Tara",
+                )
 
         with gr.Row():
             model = gr.Dropdown(
@@ -168,6 +193,9 @@ def build_demo() -> gr.Blocks:
             fn=run_batch,
             inputs=[
                 files,
+                local_paths,
+                folder_path,
+                scan_recursive,
                 model,
                 language,
                 task,
@@ -188,15 +216,98 @@ def build_demo() -> gr.Blocks:
             outputs=[result_table, preview, downloads, logs],
         )
         clear_button.click(
-            fn=lambda: (None, "", None, ""),
-            outputs=[result_table, preview, downloads, logs],
+            fn=clear_ui,
+            outputs=[files, local_paths, folder_path, scan_recursive, result_table, preview, downloads, logs],
         )
+
+        demo.queue(status_update_rate=1, default_concurrency_limit=1, max_size=8)
 
     return demo
 
 
+def render_logs(log_lines: list[str], current_status: str | None = None) -> str:
+    visible_lines = list(log_lines[-20:])
+    if current_status:
+        visible_lines.extend(["", current_status])
+    return "\n".join(visible_lines)
+
+
+def strip_wrapping_quotes(value: str) -> str:
+    cleaned = value.strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {"'", '"'}:
+        return cleaned[1:-1]
+    return cleaned
+
+
+def is_supported_media_file(path: Path) -> bool:
+    return path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
+
+
+def collect_input_files(
+    uploaded_files: list[str] | None,
+    local_paths_text: str,
+    folder_path: str,
+    recursive_scan: bool,
+) -> tuple[list[Path], list[str]]:
+    sources: list[Path] = []
+    warnings: list[str] = []
+    seen: set[Path] = set()
+
+    def add_candidate(path: Path, *, origin: str) -> None:
+        resolved = path.expanduser().resolve()
+        if resolved in seen:
+            return
+        if not resolved.exists():
+            warnings.append(f"[UYARI] {origin}: bulunamadi -> {resolved}")
+            return
+        if not is_supported_media_file(resolved):
+            warnings.append(f"[UYARI] {origin}: desteklenmeyen uzanti -> {resolved.name}")
+            return
+        seen.add(resolved)
+        sources.append(resolved)
+
+    for raw_path in uploaded_files or []:
+        add_candidate(Path(str(raw_path)), origin="upload")
+
+    for line in local_paths_text.splitlines():
+        cleaned = strip_wrapping_quotes(line)
+        if not cleaned:
+            continue
+        candidate = Path(cleaned).expanduser()
+        if candidate.is_dir():
+            warnings.append(f"[UYARI] manual path klasor cikti, klasor alani kullan -> {candidate}")
+            continue
+        add_candidate(candidate, origin="manual path")
+
+    cleaned_folder = strip_wrapping_quotes(folder_path)
+    if cleaned_folder:
+        folder = Path(cleaned_folder).expanduser().resolve()
+        if not folder.exists():
+            warnings.append(f"[UYARI] klasor bulunamadi -> {folder}")
+        elif not folder.is_dir():
+            warnings.append(f"[UYARI] klasor alani dosya degil, klasor bekleniyor -> {folder}")
+        else:
+            iterator = folder.rglob("*") if recursive_scan else folder.glob("*")
+            folder_matches = 0
+            for candidate in iterator:
+                if is_supported_media_file(candidate):
+                    add_candidate(candidate, origin="folder scan")
+                    folder_matches += 1
+            if folder_matches == 0:
+                warnings.append(f"[UYARI] klasorde desteklenen medya dosyasi bulunamadi -> {folder}")
+
+    return sources, warnings
+
+
+def clear_ui():
+    return None, "", "", True, None, "", None, ""
+
+
 def run_batch(
     files: list[str] | None,
+    local_paths_text: str,
+    folder_path: str,
+    recursive_scan: bool,
     model: str,
     language: str,
     task: str,
@@ -215,10 +326,14 @@ def run_batch(
     condition_on_previous_text: bool,
     progress: gr.Progress = gr.Progress(),
 ):
-    if not files:
-        raise gr.Error("En az bir ses dosyasi secmelisin.")
     if not output_formats:
         raise gr.Error("En az bir cikti formati secmelisin.")
+
+    resolved_files, warnings = collect_input_files(files, local_paths_text, folder_path, recursive_scan)
+    if not resolved_files:
+        raise gr.Error(
+            "En az bir ses dosyasi secmelisin ya da yerel disk moduna tam dosya yolu/klasor girmelisin."
+        )
 
     normalized_language = None if language.strip().lower() == "auto" else language.strip()
     settings = TranscriptionSettings(
@@ -243,17 +358,59 @@ def run_batch(
     table_rows: list[list[object]] = []
     preview_chunks: list[str] = []
     generated_files: list[str] = []
-    log_lines: list[str] = []
+    log_lines: list[str] = warnings + [
+        f"[INFO] {len(resolved_files)} dosya siraya alindi. model={model}, gorev={task}"
+    ]
+    current_status = "[CALISIYOR] Kuyruk hazirlaniyor"
 
-    total = len(files)
-    for index, raw_file in enumerate(files, start=1):
-        source = Path(raw_file)
-        progress((index - 1) / total, desc=f"Isleniyor: {source.name}")
+    yield table_rows, "", generated_files, render_logs(log_lines, current_status)
+
+    total = len(resolved_files)
+    for index, source in enumerate(resolved_files, start=1):
+        current_status = f"[CALISIYOR] {source.name}: siraya alindi"
+        progress((index - 1) / total, desc=f"Sirada: {source.name}")
+        yield (
+            table_rows,
+            "\n\n".join(preview_chunks),
+            generated_files,
+            render_logs(log_lines, current_status),
+        )
+
         try:
-            result = engine.transcribe_file(source, settings, output_dir)
+            result = None
+            for file_progress, message, maybe_result in engine.stream_file(source, settings, output_dir):
+                current_status = f"[CALISIYOR] {message}"
+                overall_progress = ((index - 1) + min(max(file_progress, 0.0), 1.0)) / total
+                progress(overall_progress, desc=message)
+                if maybe_result is not None:
+                    result = maybe_result
+                yield (
+                    table_rows,
+                    "\n\n".join(preview_chunks),
+                    generated_files,
+                    render_logs(log_lines, current_status),
+                )
         except Exception as exc:
             logger.exception("Transcription failed for %s", source)
             log_lines.append(f"[HATA] {source.name}: {exc}")
+            current_status = None
+            yield (
+                table_rows,
+                "\n\n".join(preview_chunks),
+                generated_files,
+                render_logs(log_lines, current_status),
+            )
+            continue
+
+        if result is None:
+            log_lines.append(f"[HATA] {source.name}: sonuc olusturulamadi.")
+            current_status = None
+            yield (
+                table_rows,
+                "\n\n".join(preview_chunks),
+                generated_files,
+                render_logs(log_lines, current_status),
+            )
             continue
 
         preview_chunks.append(f"## {source.name}\n{result.text.strip()}")
@@ -273,12 +430,21 @@ def run_batch(
             f"[OK] {source.name} -> dil={result.language or 'unknown'}, "
             f"segment={len(result.segments)}, cikti={len(result.output_files)}"
         )
+        current_status = None
         progress(index / total, desc=f"Tamamlandi: {source.name}")
+        yield (
+            table_rows,
+            "\n\n".join(preview_chunks),
+            generated_files,
+            render_logs(log_lines, current_status),
+        )
 
     if not table_rows:
         raise gr.Error("Hicbir dosya basariyla transcribe edilemedi. Log kismini kontrol et.")
 
-    return table_rows, "\n\n".join(preview_chunks), generated_files, "\n".join(log_lines)
+    log_lines.append("[INFO] Tum isler tamamlandi.")
+    progress(1.0, desc="Tum isler tamamlandi")
+    yield table_rows, "\n\n".join(preview_chunks), generated_files, render_logs(log_lines)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -361,7 +527,15 @@ def main() -> int:
         port = getattr(args, "port", 7860)
         share = getattr(args, "share", False)
         demo = build_demo()
-        demo.launch(server_name=host, server_port=port, share=share, inbrowser=True)
+        demo.launch(
+            server_name=host,
+            server_port=port,
+            share=share,
+            inbrowser=True,
+            show_error=True,
+            max_file_size="2gb",
+            pwa=True,
+        )
         return 0
 
     if args.command == "transcribe":

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 
 import ctranslate2
@@ -76,13 +77,15 @@ class WhisperRuntime:
 
 
 class TranscriptionEngine:
-    def transcribe_file(
+    def stream_file(
         self,
         audio_path: str | Path,
         settings: TranscriptionSettings,
         output_dir: str | Path,
-    ) -> TranscriptionResult:
+    ) -> Iterator[tuple[float, str, TranscriptionResult | None]]:
         source = Path(audio_path).expanduser().resolve()
+        yield 0.02, f"{source.name}: dosya hazirlaniyor", None
+
         if not source.exists():
             raise FileNotFoundError(f"Audio file not found: {source}")
 
@@ -92,6 +95,7 @@ class TranscriptionEngine:
                 "Use large-v3 or medium for translation."
             )
 
+        yield 0.08, f"{source.name}: model hazirlaniyor ({settings.model})", None
         model, pipeline, device, compute_type = WhisperRuntime.get_backend(settings)
         transcribe_fn = pipeline.transcribe if pipeline else model.transcribe
         kwargs = {
@@ -114,8 +118,30 @@ class TranscriptionEngine:
             kwargs["batch_size"] = settings.batch_size
 
         logger.info("Transcribing %s with model=%s device=%s", source.name, settings.model, device)
+        yield 0.15, f"{source.name}: transkripsiyon baslatiliyor", None
         raw_segments, info = transcribe_fn(str(source), **kwargs)
-        segments = [self._coerce_segment(index, segment) for index, segment in enumerate(raw_segments)]
+
+        total_duration = float(getattr(info, "duration", 0) or 0)
+        segments: list[SegmentData] = []
+        last_progress = 0.15
+        for index, segment in enumerate(raw_segments):
+            coerced = self._coerce_segment(index, segment)
+            segments.append(coerced)
+
+            if total_duration > 0:
+                ratio = min(max(coerced.end / total_duration, 0.0), 0.995)
+                current_progress = 0.15 + (0.75 * ratio)
+                if current_progress - last_progress >= 0.02 or ratio >= 0.995:
+                    last_progress = current_progress
+                    percent = int(ratio * 100)
+                    yield current_progress, f"{source.name}: transkribe ediliyor ({percent}%)", None
+            else:
+                current_progress = min(0.2 + ((index + 1) * 0.02), 0.88)
+                if current_progress - last_progress >= 0.02:
+                    last_progress = current_progress
+                    yield current_progress, f"{source.name}: transkribe ediliyor (segment {index + 1})", None
+
+        yield 0.92, f"{source.name}: metin toparlaniyor", None
         text = to_plain_text(segments)
         base_name = build_base_name(source)
 
@@ -139,7 +165,24 @@ class TranscriptionEngine:
             segments=segments,
             output_files=output_files,
         )
+        yield 0.97, f"{source.name}: ciktilar yaziliyor", None
         export_result(result, output_root)
+        yield 1.0, f"{source.name}: tamamlandi", result
+
+    def transcribe_file(
+        self,
+        audio_path: str | Path,
+        settings: TranscriptionSettings,
+        output_dir: str | Path,
+    ) -> TranscriptionResult:
+        result: TranscriptionResult | None = None
+        for _, _, maybe_result in self.stream_file(audio_path, settings, output_dir):
+            if maybe_result is not None:
+                result = maybe_result
+
+        if result is None:
+            raise RuntimeError("Transcription finished without producing a result.")
+
         return result
 
     @staticmethod

@@ -19,10 +19,13 @@ It is designed for people who want:
 - Multilingual speech-to-text with automatic language detection
 - Batch processing for multiple audio or video files
 - Gradio UI for drag-and-drop use
+- Local disk mode for direct file paths or folder scans without browser upload
+- Live stage-by-stage progress for long-running transcriptions
 - CLI mode for automation and power users
 - Export formats: `txt`, `srt`, `vtt`, `json`
 - Quality-first model option: `large-v3`
 - Speed-first model option: `turbo`
+- Installable in supported browsers as a PWA
 
 ## Supported Inputs
 
@@ -79,6 +82,12 @@ python app.py
 ```
 
 The default UI address is `http://127.0.0.1:7860`.
+In supported browsers, the app can also be installed as a PWA for quicker relaunching.
+
+If browser upload becomes unreliable for very large media, use the local disk mode in the UI:
+
+- paste one or more absolute file paths
+- or point the app at a folder and let it scan supported media files
 
 ### Use the CLI
 

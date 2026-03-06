@@ -40,18 +40,22 @@ The GitHub Actions release workflow will:
 - verify that the tag version matches `massscriber.__version__`
 - create a GitHub Release
 - upload the built artifacts to that release
-
-If a `PYPI_API_TOKEN` repository secret is configured, the PyPI workflow will also publish the tagged version to PyPI when you push a release tag.
+- publish the tagged version to PyPI through Trusted Publishing once the publisher is configured on PyPI
 
 ## PyPI setup
 
-To enable PyPI publishing, add this repository secret in GitHub:
+Massscriber uses PyPI Trusted Publishing via GitHub Actions OIDC.
 
-```text
-PYPI_API_TOKEN
-```
+One-time setup on PyPI:
 
-The value should be a PyPI API token for the target project.
+1. Open the project's publishing settings while logged into PyPI as a project owner.
+2. Add a GitHub publisher for:
+   - owner: `BarryAllen53`
+   - repository: `massscriber`
+   - workflow: `pypi-publish.yml`
+   - environment: `pypi`
+
+After that, the GitHub workflow can publish without storing a long-lived PyPI token in GitHub secrets.
 
 ## Tag format
 

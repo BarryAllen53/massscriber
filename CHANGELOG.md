@@ -11,6 +11,11 @@ The format is inspired by Keep a Changelog and the project follows Semantic Vers
 - Added a dedicated release process document.
 - Improved package metadata and project entry point configuration.
 - Reworked the README for a more public, release-ready GitHub presentation.
+- Added live stage-by-stage progress updates for long transcription jobs in the Gradio UI.
+- Added streaming status logs so single large files no longer appear stuck at 0%.
+- Added a local disk mode for direct file-path and folder-based transcription without browser upload.
+- Enabled PWA support for the local Gradio app.
+- Switched PyPI publishing workflow toward Trusted Publishing (OIDC) instead of a long-lived API token.
 
 ## [0.1.0] - 2026-03-06
 

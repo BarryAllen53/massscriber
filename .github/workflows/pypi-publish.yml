@@ -9,43 +9,30 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    environment:
+      name: pypi
+      url: https://pypi.org/project/massscriber/
 
     steps:
-      - name: Check PyPI token configuration
-        id: token_check
-        shell: bash
-        env:
-          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-        run: |
-          if [ -z "$PYPI_API_TOKEN" ]; then
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "PyPI token is not configured. Skipping publish."
-          else
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Check out repository
-        if: steps.token_check.outputs.configured == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Python
-        if: steps.token_check.outputs.configured == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install build tools
-        if: steps.token_check.outputs.configured == 'true'
         run: |
           python -m pip install --upgrade pip
           python -m pip install build
 
       - name: Build distributions
-        if: steps.token_check.outputs.configured == 'true'
         run: python -m build
 
       - name: Publish package to PyPI
-        if: steps.token_check.outputs.configured == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          attestations: true
