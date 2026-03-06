@@ -18,6 +18,11 @@ class FakeModel:
         return iter(segments), info
 
 
+class FakeCudaFailingModel:
+    def transcribe(self, _source: str, **_kwargs):
+        raise RuntimeError("Library cublas64_12.dll is not found or cannot be loaded")
+
+
 class TranscriberProgressTests(TestCase):
     def test_stream_file_emits_intermediate_progress_and_result(self):
         settings = TranscriptionSettings(model="tiny", output_formats=("txt",))
@@ -43,3 +48,31 @@ class TranscriberProgressTests(TestCase):
                 self.assertIsNotNone(result)
                 self.assertEqual(result.text, "Merhaba dunya")
                 self.assertTrue(result.output_files["txt"].exists())
+
+    def test_stream_file_falls_back_to_cpu_when_cuda_runtime_is_missing(self):
+        settings = TranscriptionSettings(model="tiny", device="auto", output_formats=("txt",))
+        engine = TranscriptionEngine()
+
+        with TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            audio_path = tmp_path / "sample.wav"
+            audio_path.write_bytes(b"fake")
+
+            with patch.object(
+                WhisperRuntime,
+                "get_backend",
+                side_effect=[
+                    (FakeCudaFailingModel(), None, "cuda", "float16"),
+                    (FakeModel(), None, "cpu", "int8"),
+                ],
+            ), patch.object(WhisperRuntime, "clear_backend") as clear_backend:
+                events = list(engine.stream_file(audio_path, settings, tmp_path / "outputs"))
+
+                self.assertTrue(any("[UYARI]" in message for _, message, _ in events))
+                self.assertTrue(any("CPU moduna geciliyor" in message for _, message, _ in events))
+
+                result = events[-1][2]
+                self.assertIsNotNone(result)
+                self.assertEqual(result.device, "cpu")
+                self.assertEqual(result.compute_type, "int8")
+                clear_backend.assert_called_once()

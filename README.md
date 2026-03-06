@@ -132,6 +132,7 @@ You can also enable `vtt` from the UI or CLI.
 
 If you use an NVIDIA GPU, `faster-whisper` may require CUDA runtime libraries on your machine.
 CPU mode works too; it is simply slower.
+If CUDA libraries such as `cublas64_12.dll` are missing, Massscriber now falls back to CPU automatically and logs a clear warning instead of stopping the job.
 
 According to the `faster-whisper` recommendations:
 

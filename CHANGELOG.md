@@ -6,6 +6,8 @@ The format is inspired by Keep a Changelog and the project follows Semantic Vers
 
 ## [Unreleased]
 
+- Added automatic CPU fallback when CUDA runtime DLLs like `cublas64_12.dll` are missing.
+
 ## [0.1.1] - 2026-03-06
 
 ### Added

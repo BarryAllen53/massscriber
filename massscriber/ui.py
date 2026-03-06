@@ -361,6 +361,7 @@ def run_batch(
     log_lines: list[str] = warnings + [
         f"[INFO] {len(resolved_files)} dosya siraya alindi. model={model}, gorev={task}"
     ]
+    sticky_messages: set[str] = set(log_lines)
     current_status = "[CALISIYOR] Kuyruk hazirlaniyor"
 
     yield table_rows, "", generated_files, render_logs(log_lines, current_status)
@@ -379,6 +380,9 @@ def run_batch(
         try:
             result = None
             for file_progress, message, maybe_result in engine.stream_file(source, settings, output_dir):
+                if message.startswith("[UYARI]") and message not in sticky_messages:
+                    log_lines.append(message)
+                    sticky_messages.add(message)
                 current_status = f"[CALISIYOR] {message}"
                 overall_progress = ((index - 1) + min(max(file_progress, 0.0), 1.0)) / total
                 progress(overall_progress, desc=message)
