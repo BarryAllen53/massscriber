@@ -6,6 +6,10 @@ The format is inspired by Keep a Changelog and the project follows Semantic Vers
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-03-06
+
+- Fixed the GitHub release workflow to publish tagged releases through `softprops/action-gh-release`, avoiding the failing `gh` shell dependency on runners.
+
 ## [0.3.0] - 2026-03-06
 
 - Added saved workflow profiles in the UI for reusable transcription, glossary, subtitle, and watch presets.
