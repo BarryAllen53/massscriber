@@ -39,6 +39,24 @@ def load_watch_state(state_file: Path) -> dict[str, dict[str, object]]:
     return payload if isinstance(payload, dict) else {}
 
 
+def build_watch_rows(output_dir: str | Path) -> list[list[str]]:
+    output_root = Path(output_dir).expanduser().resolve()
+    state = load_watch_state(output_root / STATE_FILE_NAME)
+    rows: list[list[str]] = []
+    for source_path, payload in sorted(state.items()):
+        outputs = payload.get("outputs", {})
+        output_formats = ", ".join(sorted(outputs)) if isinstance(outputs, dict) else ""
+        rows.append(
+            [
+                Path(source_path).name,
+                source_path,
+                str(payload.get("processed_at", "")),
+                output_formats,
+            ]
+        )
+    return rows
+
+
 def save_watch_state(state_file: Path, state: dict[str, dict[str, object]]) -> None:
     state_file.parent.mkdir(parents=True, exist_ok=True)
     state_file.write_text(

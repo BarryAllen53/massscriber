@@ -23,6 +23,9 @@ It is designed for people who want:
 - Configurable subtitle segmentation for cleaner `srt` and `vtt` exports
 - Experimental speaker diarization with optional `pyannote.audio` support
 - Folder watch CLI workflow for auto-transcribing new media files
+- UI watch panel with live logs and history refresh
+- Glossary-aware transcript cleanup for names, brands, and recurring corrections
+- Built-in system health panel plus `doctor` CLI command
 - Live stage-by-stage progress for long-running transcriptions
 - CLI mode for automation and power users
 - Export formats: `txt`, `srt`, `vtt`, `json`
@@ -95,6 +98,12 @@ If browser upload becomes unreliable for very large media, use the local disk mo
 - paste one or more absolute file paths
 - or point the app at a folder and let it scan supported media files
 
+The UI also now includes:
+
+- a live system status panel for CUDA/runtime health
+- a watch panel for repeated folder scans
+- glossary rules for post-transcription cleanup
+
 ### Use the CLI
 
 ```powershell
@@ -120,6 +129,12 @@ For a long-running workflow:
 massscriber watch "C:\audio\incoming" --model turbo --archive-dir "C:\audio\done"
 ```
 
+### Check system health
+
+```powershell
+massscriber doctor
+```
+
 ## Recommended Settings
 
 ### Best quality
@@ -141,6 +156,20 @@ massscriber watch "C:\audio\incoming" --model turbo --archive-dir "C:\audio\done
 - Subtitle max chars: `36` to `48`
 - Subtitle max duration: `4.0` to `6.0`
 - Pause split: enabled
+
+### Glossary cleanup
+
+- Use `Source => Target` format, one rule per line
+- Great for names, brands, product terms, and repeated OCR-like mistakes
+- Works in UI, CLI, and watch workflows
+
+Example:
+
+```text
+Open AI => OpenAI
+Chat GPT => ChatGPT
+Baris Manco => Barış Manço
+```
 
 ### Experimental speaker diarization
 
@@ -229,13 +258,15 @@ python -m py_compile app.py massscriber\__init__.py massscriber\types.py massscr
 - Experimental speaker diarization support is now wired in as an optional extra.
 - Subtitle exports now have configurable regrouping controls for better cue sizing.
 - Folder watch and auto-transcribe workflows now exist in the CLI with persistent state and optional archiving.
+- Folder watch is now available in the UI for repeated scan sessions.
+- Glossary-aware cleanup and a built-in doctor/status surface are now part of the core app.
 - Desktop packaging now has a local build script and a Windows artifact workflow.
 
 ## Next Roadmap
 
-- Promote folder watch into the UI with start/stop controls and saved watch profiles
 - Improve diarization with speaker-aware word-level subtitle cues
 - Produce signed desktop installers instead of raw bundles
+- Add saved watch/glossary profiles and one-click workflow presets
 - Add transcript search, batch review, and glossary-aware correction tools
 - Add project-level transcript libraries for large collections
 

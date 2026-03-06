@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import argparse
 import logging
+import time
 from pathlib import Path
 
 import gradio as gr
 
+from massscriber.diagnostics import detect_system_status, render_system_status
 from massscriber.transcriber import SUPPORTED_MODELS, TranscriptionEngine
 from massscriber.types import TranscriptionSettings
-from massscriber.watcher import watch_folder
+from massscriber.watcher import build_watch_rows, watch_folder
 
 APP_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT_DIR = APP_ROOT / "outputs"
@@ -211,6 +213,25 @@ def build_demo() -> gr.Blocks:
                     placeholder="HUGGINGFACE_HUB_TOKEN yoksa buraya girebilirsin",
                 )
 
+            glossary_text = gr.Textbox(
+                value="",
+                lines=4,
+                label="Glossary / Duzeltme Kurallari",
+                placeholder="Her satira bir kural yaz.\nOpen AI => OpenAI\nBarış Manço => Baris Manco",
+            )
+            with gr.Row():
+                glossary_case_sensitive = gr.Checkbox(
+                    value=False,
+                    label="Glossary Case Sensitive",
+                )
+                glossary_whole_word = gr.Checkbox(
+                    value=True,
+                    label="Sadece Tam Kelime Eslesmesi",
+                )
+
+        system_status = gr.Markdown(render_system_status(detect_system_status(DEFAULT_OUTPUT_DIR)))
+        refresh_status_button = gr.Button("Sistem Durumunu Yenile")
+
         with gr.Row():
             run_button = gr.Button("Transcribe", variant="primary")
             clear_button = gr.Button("Temizle")
@@ -232,6 +253,57 @@ def build_demo() -> gr.Blocks:
         )
         downloads = gr.Files(label="Olusan Dosyalar")
         logs = gr.Textbox(label="Log", lines=12, interactive=False)
+
+        with gr.Accordion("Klasor Izleme Paneli", open=False):
+            gr.Markdown(
+                """
+                Yeni gelen medya dosyalarini belirli araliklarla tarayip otomatik transcribe eder.
+                Uzun sureli izleme icin `cycles` degerini buyutabilir ya da CLI `watch` komutunu kullanabilirsin.
+                """
+            )
+            with gr.Row():
+                watch_folder_path = gr.Textbox(
+                    label="Izlenecek Klasor",
+                    placeholder="C:\\Kayitlar\\Gelenler",
+                )
+                watch_archive_dir = gr.Textbox(
+                    label="Arsiv Klasoru (opsiyonel)",
+                    placeholder="C:\\Kayitlar\\Islenenler",
+                )
+            with gr.Row():
+                watch_recursive = gr.Checkbox(value=True, label="Alt Klasorleri de Izle")
+                watch_poll_interval = gr.Slider(
+                    minimum=1,
+                    maximum=60,
+                    step=1,
+                    value=5,
+                    label="Tarama Araligi (sn)",
+                )
+                watch_stable_seconds = gr.Slider(
+                    minimum=0,
+                    maximum=120,
+                    step=1,
+                    value=10,
+                    label="Dosya Stabil Bekleme (sn)",
+                )
+                watch_cycles = gr.Slider(
+                    minimum=1,
+                    maximum=120,
+                    step=1,
+                    value=6,
+                    label="UI Izleme Dongusu",
+                )
+            with gr.Row():
+                watch_button = gr.Button("Klasoru Izle", variant="secondary")
+                watch_refresh_button = gr.Button("Watch Durumunu Yenile")
+            watch_table = gr.Dataframe(
+                headers=["Dosya", "Kaynak", "Islenme Zamani", "Formatlar"],
+                datatype=["str", "str", "str", "str"],
+                interactive=False,
+                wrap=True,
+                label="Watch Gecmisi",
+            )
+            watch_logs = gr.Textbox(label="Watch Log", lines=12, interactive=False)
 
         run_button.click(
             fn=run_batch,
@@ -263,12 +335,63 @@ def build_demo() -> gr.Blocks:
                 enable_diarization,
                 diarization_model,
                 diarization_token,
+                glossary_text,
+                glossary_case_sensitive,
+                glossary_whole_word,
             ],
             outputs=[result_table, preview, downloads, logs],
         )
         clear_button.click(
             fn=clear_ui,
             outputs=[files, local_paths, folder_path, scan_recursive, result_table, preview, downloads, logs],
+        )
+        refresh_status_button.click(
+            fn=refresh_system_status,
+            inputs=[output_dir],
+            outputs=[system_status],
+        )
+        watch_button.click(
+            fn=run_watch_panel,
+            inputs=[
+                watch_folder_path,
+                watch_archive_dir,
+                watch_recursive,
+                watch_poll_interval,
+                watch_stable_seconds,
+                watch_cycles,
+                model,
+                language,
+                task,
+                device,
+                compute_type,
+                output_formats,
+                beam_size,
+                batch_size,
+                vad_filter,
+                word_timestamps,
+                temperature,
+                vad_min_silence_ms,
+                cpu_threads,
+                output_dir,
+                initial_prompt,
+                condition_on_previous_text,
+                subtitle_max_chars,
+                subtitle_max_duration,
+                subtitle_pause_threshold,
+                subtitle_split_on_pause,
+                enable_diarization,
+                diarization_model,
+                diarization_token,
+                glossary_text,
+                glossary_case_sensitive,
+                glossary_whole_word,
+            ],
+            outputs=[watch_table, watch_logs],
+        )
+        watch_refresh_button.click(
+            fn=refresh_watch_panel,
+            inputs=[output_dir],
+            outputs=[watch_table, watch_logs],
         )
 
         demo.queue(status_update_rate=1, default_concurrency_limit=1, max_size=8)
@@ -354,6 +477,19 @@ def clear_ui():
     return None, "", "", True, None, "", None, ""
 
 
+def refresh_system_status(output_dir: str) -> str:
+    target = output_dir.strip() or str(DEFAULT_OUTPUT_DIR)
+    return render_system_status(detect_system_status(target))
+
+
+def refresh_watch_panel(output_dir: str) -> tuple[list[list[str]], str]:
+    target = output_dir.strip() or str(DEFAULT_OUTPUT_DIR)
+    rows = build_watch_rows(target)
+    if not rows:
+        return [], "[INFO] Watch gecmisi henuz bos."
+    return rows, f"[INFO] {len(rows)} kayitli watch sonucu bulundu."
+
+
 def run_batch(
     files: list[str] | None,
     local_paths_text: str,
@@ -382,6 +518,9 @@ def run_batch(
     enable_diarization: bool,
     diarization_model: str,
     diarization_token: str,
+    glossary_text: str,
+    glossary_case_sensitive: bool,
+    glossary_whole_word: bool,
     progress: gr.Progress = gr.Progress(),
 ):
     if not output_formats:
@@ -416,6 +555,9 @@ def run_batch(
         enable_diarization=bool(enable_diarization),
         diarization_model=diarization_model.strip() or "pyannote/speaker-diarization-3.1",
         diarization_token=diarization_token.strip() or None,
+        glossary_text=glossary_text,
+        glossary_case_sensitive=bool(glossary_case_sensitive),
+        glossary_whole_word=bool(glossary_whole_word),
         output_formats=tuple(output_formats),
     )
 
@@ -516,6 +658,103 @@ def run_batch(
     yield table_rows, "\n\n".join(preview_chunks), generated_files, render_logs(log_lines)
 
 
+def run_watch_panel(
+    watch_folder_path: str,
+    watch_archive_dir: str,
+    watch_recursive: bool,
+    watch_poll_interval: float,
+    watch_stable_seconds: float,
+    watch_cycles: int,
+    model: str,
+    language: str,
+    task: str,
+    device: str,
+    compute_type: str,
+    output_formats: list[str],
+    beam_size: int,
+    batch_size: int,
+    vad_filter: bool,
+    word_timestamps: bool,
+    temperature: float,
+    vad_min_silence_ms: int,
+    cpu_threads: int,
+    output_dir: str,
+    initial_prompt: str,
+    condition_on_previous_text: bool,
+    subtitle_max_chars: int,
+    subtitle_max_duration: float,
+    subtitle_pause_threshold: float,
+    subtitle_split_on_pause: bool,
+    enable_diarization: bool,
+    diarization_model: str,
+    diarization_token: str,
+    glossary_text: str,
+    glossary_case_sensitive: bool,
+    glossary_whole_word: bool,
+):
+    if not watch_folder_path.strip():
+        raise gr.Error("Izlenecek klasor yolunu girmelisin.")
+
+    settings = TranscriptionSettings(
+        model=model,
+        language=None if language.strip().lower() == "auto" else language.strip(),
+        task=task,
+        device=device,
+        compute_type=compute_type,
+        beam_size=int(beam_size),
+        batch_size=int(batch_size),
+        temperature=float(temperature),
+        vad_filter=bool(vad_filter),
+        vad_min_silence_ms=int(vad_min_silence_ms),
+        word_timestamps=bool(word_timestamps),
+        condition_on_previous_text=bool(condition_on_previous_text),
+        initial_prompt=initial_prompt,
+        cpu_threads=int(cpu_threads) if cpu_threads else None,
+        subtitle_max_chars=int(subtitle_max_chars),
+        subtitle_max_duration=float(subtitle_max_duration),
+        subtitle_split_on_pause=bool(subtitle_split_on_pause),
+        subtitle_pause_threshold=float(subtitle_pause_threshold),
+        enable_diarization=bool(enable_diarization),
+        diarization_model=diarization_model.strip() or "pyannote/speaker-diarization-3.1",
+        diarization_token=diarization_token.strip() or None,
+        glossary_text=glossary_text,
+        glossary_case_sensitive=bool(glossary_case_sensitive),
+        glossary_whole_word=bool(glossary_whole_word),
+        output_formats=tuple(output_formats),
+    )
+
+    log_lines = [
+        f"[INFO] Watch baslatildi: {watch_folder_path}",
+        f"[INFO] UI dongu sayisi: {int(watch_cycles)}",
+    ]
+    target_output_dir = output_dir.strip() or str(DEFAULT_OUTPUT_DIR)
+    rows = build_watch_rows(target_output_dir)
+    yield rows, "\n".join(log_lines)
+
+    for cycle_index in range(int(watch_cycles)):
+        cycle_message = f"[INFO] Dongu {cycle_index + 1}/{int(watch_cycles)} calisiyor..."
+        log_lines.append(cycle_message)
+        yield build_watch_rows(target_output_dir), "\n".join(log_lines[-20:])
+        for event in watch_folder(
+            watch_folder_path,
+            settings,
+            target_output_dir,
+            recursive=bool(watch_recursive),
+            poll_interval=float(watch_poll_interval),
+            stable_seconds=float(watch_stable_seconds),
+            once=True,
+            archive_dir=watch_archive_dir.strip() or None,
+        ):
+            log_lines.append(event)
+            rows = build_watch_rows(target_output_dir)
+            yield rows, "\n".join(log_lines[-20:])
+        if cycle_index < int(watch_cycles) - 1:
+            time.sleep(max(1.0, float(watch_poll_interval)))
+
+    log_lines.append("[INFO] UI watch dongusu tamamlandi.")
+    yield build_watch_rows(target_output_dir), "\n".join(log_lines[-20:])
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Massscriber local transcription app")
     subparsers = parser.add_subparsers(dest="command")
@@ -537,6 +776,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     watch_parser.add_argument("--archive-dir", default="")
     watch_parser.add_argument("--no-recursive", action="store_true")
     add_common_transcription_arguments(watch_parser)
+
+    doctor_parser = subparsers.add_parser("doctor", help="Show system health and runtime readiness")
+    doctor_parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
 
     return parser
 
@@ -574,9 +816,17 @@ def add_common_transcription_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--enable-diarization", action="store_true")
     parser.add_argument("--diarization-model", default="pyannote/speaker-diarization-3.1")
     parser.add_argument("--diarization-token", default="")
+    parser.add_argument("--glossary-file", default="")
+    parser.add_argument("--glossary-text", default="")
+    parser.add_argument("--glossary-case-sensitive", action="store_true")
+    parser.add_argument("--glossary-phrase-mode", action="store_true")
 
 
 def build_settings_from_args(args: argparse.Namespace) -> TranscriptionSettings:
+    glossary_text = getattr(args, "glossary_text", "") or ""
+    glossary_file = getattr(args, "glossary_file", "") or ""
+    if glossary_file:
+        glossary_text = Path(glossary_file).expanduser().read_text(encoding="utf-8")
     return TranscriptionSettings(
         model=args.model,
         language=None if args.language.lower() == "auto" else args.language,
@@ -599,6 +849,9 @@ def build_settings_from_args(args: argparse.Namespace) -> TranscriptionSettings:
         enable_diarization=args.enable_diarization,
         diarization_model=args.diarization_model,
         diarization_token=args.diarization_token or None,
+        glossary_text=glossary_text,
+        glossary_case_sensitive=args.glossary_case_sensitive,
+        glossary_whole_word=not args.glossary_phrase_mode,
         output_formats=tuple(args.formats),
     )
 
@@ -642,6 +895,12 @@ def run_watch(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_doctor(args: argparse.Namespace) -> int:
+    status = detect_system_status(args.output_dir)
+    print(render_system_status(status))
+    return 0
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
     parser = build_arg_parser()
@@ -668,6 +927,9 @@ def main() -> int:
 
     if args.command == "watch":
         return run_watch(args)
+
+    if args.command == "doctor":
+        return run_doctor(args)
 
     parser.print_help()
     return 1

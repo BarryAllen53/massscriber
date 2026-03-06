@@ -6,9 +6,14 @@ The format is inspired by Keep a Changelog and the project follows Semantic Vers
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-06
+
 - Added configurable subtitle regrouping controls for cleaner `srt` and `vtt` exports.
 - Added a `watch` CLI workflow with persistent state and optional archive moves.
+- Added a UI watch panel for live folder scans and watch-history refreshes.
 - Added experimental speaker diarization plumbing with optional `pyannote.audio` support.
+- Added glossary-aware cleanup rules for transcript normalization across previews and subtitle exports.
+- Added a `doctor` system-health command and a UI system status panel.
 - Added Windows desktop bundle build scripts and a GitHub Actions desktop artifact workflow.
 
 ## [0.1.2] - 2026-03-06

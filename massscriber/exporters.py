@@ -5,6 +5,7 @@ import re
 from dataclasses import asdict
 from pathlib import Path
 
+from massscriber.postprocess import apply_glossary_to_text
 from massscriber.types import SegmentData, TranscriptionResult, TranscriptionSettings
 
 
@@ -65,8 +66,14 @@ def wrap_subtitle_text(text: str, max_chars: int, max_lines: int = 2) -> str:
     return "\n".join(line for line in lines if line)
 
 
-def _format_subtitle_text(text: str, speaker: str | None, max_chars: int) -> str:
+def _format_subtitle_text(
+    text: str,
+    speaker: str | None,
+    max_chars: int,
+    settings: TranscriptionSettings,
+) -> str:
     base = normalize_caption_text(text)
+    base = apply_glossary_to_text(base, settings)
     if speaker:
         base = f"[{speaker}] {base}"
     return wrap_subtitle_text(base, max_chars=max_chars)
@@ -99,6 +106,7 @@ def build_subtitle_segments(
             max_chars=max_chars,
             max_duration=max_duration,
             pause_threshold=pause_threshold,
+            settings=config,
         )
 
     return _build_subtitle_segments_from_segments(
@@ -106,6 +114,7 @@ def build_subtitle_segments(
         max_chars=max_chars,
         max_duration=max_duration,
         pause_threshold=pause_threshold,
+        settings=config,
     )
 
 
@@ -115,6 +124,7 @@ def _build_subtitle_segments_from_words(
     max_chars: int,
     max_duration: float,
     pause_threshold: float | None,
+    settings: TranscriptionSettings,
 ) -> list[tuple[float, float, str]]:
     subtitles: list[tuple[float, float, str]] = []
     current_tokens: list[str] = []
@@ -130,7 +140,7 @@ def _build_subtitle_segments_from_words(
             (
                 current_start,
                 current_end,
-                _format_subtitle_text("".join(current_tokens), current_speaker, max_chars),
+                _format_subtitle_text("".join(current_tokens), current_speaker, max_chars, settings),
             )
         )
         current_tokens = []
@@ -173,6 +183,7 @@ def _build_subtitle_segments_from_segments(
     max_chars: int,
     max_duration: float,
     pause_threshold: float | None,
+    settings: TranscriptionSettings,
 ) -> list[tuple[float, float, str]]:
     subtitles: list[tuple[float, float, str]] = []
     current_segments: list[SegmentData] = []
@@ -189,6 +200,7 @@ def _build_subtitle_segments_from_segments(
                     " ".join(segment.text for segment in current_segments),
                     current_segments[0].speaker,
                     max_chars,
+                    settings,
                 ),
             )
         )

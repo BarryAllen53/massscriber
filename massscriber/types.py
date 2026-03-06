@@ -52,6 +52,9 @@ class TranscriptionSettings:
     enable_diarization: bool = False
     diarization_model: str = "pyannote/speaker-diarization-3.1"
     diarization_token: str | None = None
+    glossary_text: str = ""
+    glossary_case_sensitive: bool = False
+    glossary_whole_word: bool = True
     output_formats: tuple[OutputFormat, ...] = ("txt", "srt", "json")
 
 

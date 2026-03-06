@@ -11,6 +11,7 @@ from pathlib import Path
 
 from massscriber.diarization import assign_speakers_to_segments, diarize_audio
 from massscriber.exporters import export_result, sanitize_name, to_plain_text
+from massscriber.postprocess import apply_glossary_to_segments, apply_glossary_to_text, build_glossary_summary
 from massscriber.types import SegmentData, TranscriptionResult, TranscriptionSettings, WordTiming
 
 logger = logging.getLogger(__name__)
@@ -261,6 +262,9 @@ class TranscriptionEngine:
             )
 
         yield 0.08, f"{source.name}: model hazirlaniyor ({settings.model})", None
+        glossary_summary = build_glossary_summary(settings)
+        if glossary_summary:
+            yield 0.1, glossary_summary, None
         try:
             yield 0.15, f"{source.name}: transkripsiyon baslatiliyor", None
             raw_segments, info, device, compute_type = self._transcribe_once(source, settings)
@@ -328,7 +332,9 @@ class TranscriptionEngine:
                 yield 0.91, f"{source.name}: speaker etiketleri uygulandi", None
 
         yield 0.92, f"{source.name}: metin toparlaniyor", None
+        apply_glossary_to_segments(segments, settings)
         text = to_plain_text(segments)
+        text = apply_glossary_to_text(text, settings)
         base_name = build_base_name(source)
 
         output_root = Path(output_dir).expanduser().resolve()

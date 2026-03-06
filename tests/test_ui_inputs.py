@@ -23,6 +23,9 @@ class UiInputTests(TestCase):
                 "pyannote/test-model",
                 "--diarization-token",
                 "token-123",
+                "--glossary-text",
+                "Open AI => OpenAI",
+                "--glossary-case-sensitive",
             ]
         )
 
@@ -34,6 +37,8 @@ class UiInputTests(TestCase):
         self.assertTrue(settings.enable_diarization)
         self.assertEqual(settings.diarization_model, "pyannote/test-model")
         self.assertEqual(settings.diarization_token, "token-123")
+        self.assertEqual(settings.glossary_text, "Open AI => OpenAI")
+        self.assertTrue(settings.glossary_case_sensitive)
 
     def test_collect_input_files_combines_upload_manual_and_folder_sources(self):
         with TemporaryDirectory() as tmpdir:
