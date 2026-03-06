@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
+import site
+import sys
 import threading
 from collections.abc import Iterator
 from pathlib import Path
-
-import ctranslate2
-from faster_whisper import BatchedInferencePipeline, WhisperModel
 
 from massscriber.exporters import export_result, sanitize_name, to_plain_text
 from massscriber.types import SegmentData, TranscriptionResult, TranscriptionSettings, WordTiming
@@ -30,6 +30,68 @@ CUDA_RUNTIME_HINTS = (
     "curand64_10.dll",
     "cufft64_11.dll",
 )
+
+WINDOWS_NVIDIA_BIN_SUBDIRS = (
+    Path("nvidia") / "cublas" / "bin",
+    Path("nvidia") / "cudnn" / "bin",
+    Path("nvidia") / "cuda_runtime" / "bin",
+    Path("nvidia") / "cufft" / "bin",
+    Path("nvidia") / "curand" / "bin",
+    Path("nvidia") / "nvjitlink" / "bin",
+)
+
+WINDOWS_DLL_HANDLES: list[object] = []
+
+
+def configure_windows_cuda_runtime_paths() -> list[Path]:
+    if os.name != "nt" or not hasattr(os, "add_dll_directory"):
+        return []
+
+    site_roots: list[Path] = []
+    for candidate in [Path(sys.prefix) / "Lib" / "site-packages", Path(sys.base_prefix) / "Lib" / "site-packages"]:
+        if candidate.exists() and candidate not in site_roots:
+            site_roots.append(candidate)
+
+    try:
+        for raw_path in site.getsitepackages():
+            candidate = Path(raw_path)
+            if candidate.exists() and candidate not in site_roots:
+                site_roots.append(candidate)
+    except Exception:
+        pass
+
+    try:
+        user_site = Path(site.getusersitepackages())
+        if user_site.exists() and user_site not in site_roots:
+            site_roots.append(user_site)
+    except Exception:
+        pass
+
+    added_dirs: list[Path] = []
+    seen_dirs: set[Path] = set()
+    current_path_entries = os.environ.get("PATH", "").split(os.pathsep)
+    for site_root in site_roots:
+        for relative_dir in WINDOWS_NVIDIA_BIN_SUBDIRS:
+            candidate = (site_root / relative_dir).resolve()
+            if not candidate.is_dir() or candidate in seen_dirs:
+                continue
+            WINDOWS_DLL_HANDLES.append(os.add_dll_directory(str(candidate)))
+            added_dirs.append(candidate)
+            seen_dirs.add(candidate)
+            candidate_text = str(candidate)
+            if candidate_text not in current_path_entries:
+                current_path_entries.insert(0, candidate_text)
+
+    if added_dirs:
+        os.environ["PATH"] = os.pathsep.join(current_path_entries)
+
+    return added_dirs
+
+
+CONFIGURED_WINDOWS_CUDA_DIRS = configure_windows_cuda_runtime_paths()
+
+import ctranslate2
+from faster_whisper import BatchedInferencePipeline, WhisperModel
 
 
 def detect_device(requested: str) -> str:

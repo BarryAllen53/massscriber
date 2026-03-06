@@ -63,6 +63,8 @@ install.bat
 start_ui.bat
 ```
 
+On Windows, `install.bat` now checks for `nvidia-smi` and, when an NVIDIA GPU is present, also installs the NVIDIA CUDA runtime Python packages that provide DLLs such as `cublas64_12.dll` and `cudnn64_9.dll`.
+
 ### Manual setup
 
 ```powershell
@@ -133,6 +135,7 @@ You can also enable `vtt` from the UI or CLI.
 If you use an NVIDIA GPU, `faster-whisper` may require CUDA runtime libraries on your machine.
 CPU mode works too; it is simply slower.
 If CUDA libraries such as `cublas64_12.dll` are missing, Massscriber now falls back to CPU automatically and logs a clear warning instead of stopping the job.
+On Windows, Massscriber also auto-registers NVIDIA runtime DLL folders from installed Python packages before loading `ctranslate2`, which helps GPU mode come up cleanly after `install.bat`.
 
 According to the `faster-whisper` recommendations:
 
