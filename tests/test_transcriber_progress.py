@@ -40,6 +40,7 @@ class TranscriberProgressTests(TestCase):
                 transcriber.os,
                 "add_dll_directory",
                 side_effect=fake_handles,
+                create=True,
             ) as add_dll_directory, patch.object(
                 transcriber.site,
                 "getsitepackages",

@@ -6,6 +6,10 @@ The format is inspired by Keep a Changelog and the project follows Semantic Vers
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-03-06
+
+- Fixed the Windows CUDA runtime path test so it no longer fails on Linux runners where `os.add_dll_directory` is unavailable.
+
 ## [0.3.1] - 2026-03-06
 
 - Fixed the GitHub release workflow to publish tagged releases through `softprops/action-gh-release`, avoiding the failing `gh` shell dependency on runners.
