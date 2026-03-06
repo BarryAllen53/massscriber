@@ -8,6 +8,14 @@ from pathlib import Path
 import gradio as gr
 
 from massscriber.diagnostics import detect_system_status, render_system_status
+from massscriber.library import (
+    build_preview,
+    extract_transcript_ids,
+    records_to_rows,
+    search_transcripts,
+    update_review_status,
+)
+from massscriber.profiles import delete_profile, get_profile, list_profile_names, save_profile
 from massscriber.transcriber import SUPPORTED_MODELS, TranscriptionEngine
 from massscriber.types import TranscriptionSettings
 from massscriber.watcher import build_watch_rows, watch_folder
@@ -15,6 +23,7 @@ from massscriber.watcher import build_watch_rows, watch_folder
 APP_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT_DIR = APP_ROOT / "outputs"
 SUPPORTED_EXTENSIONS = (".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac", ".wma", ".mp4", ".mkv")
+REVIEW_STATUS_CHOICES = ["pending", "reviewed", "needs-edit", "approved"]
 
 logger = logging.getLogger(__name__)
 
@@ -217,7 +226,7 @@ def build_demo() -> gr.Blocks:
                 value="",
                 lines=4,
                 label="Glossary / Duzeltme Kurallari",
-                placeholder="Her satira bir kural yaz.\nOpen AI => OpenAI\nBarış Manço => Baris Manco",
+                placeholder="Her satira bir kural yaz.\nOpen AI => OpenAI\nChat GPT => ChatGPT",
             )
             with gr.Row():
                 glossary_case_sensitive = gr.Checkbox(
@@ -304,6 +313,85 @@ def build_demo() -> gr.Blocks:
                 label="Watch Gecmisi",
             )
             watch_logs = gr.Textbox(label="Watch Log", lines=12, interactive=False)
+
+        with gr.Accordion("Workflow Profilleri", open=False):
+            gr.Markdown(
+                """
+                Watch, glossary ve temel transkripsiyon ayarlarini tek isim altinda kaydedebilirsin.
+                """
+            )
+            with gr.Row():
+                saved_profile = gr.Dropdown(
+                    choices=list_profile_names(),
+                    value=None,
+                    label="Kayitli Profiller",
+                )
+                profile_name = gr.Textbox(
+                    value="",
+                    label="Profil Adi",
+                    placeholder="ornek: Podcast GPU Preseti",
+                )
+            with gr.Row():
+                save_profile_button = gr.Button("Profili Kaydet")
+                load_profile_button = gr.Button("Profili Yukle")
+                delete_profile_button = gr.Button("Profili Sil")
+                refresh_profiles_button = gr.Button("Profilleri Yenile")
+            profile_status = gr.Textbox(label="Profil Durumu", lines=3, interactive=False)
+
+        with gr.Accordion("Transcript Library ve Batch Review", open=False):
+            gr.Markdown(
+                """
+                `outputs` klasorundeki transcript'leri tara, ara ve toplu review durumlari ata.
+                """
+            )
+            with gr.Row():
+                library_query = gr.Textbox(
+                    value="",
+                    label="Search Query",
+                    placeholder="isim, marka, cumle, dil, model ...",
+                )
+                library_status_filter = gr.Dropdown(
+                    choices=["all", *REVIEW_STATUS_CHOICES],
+                    value="all",
+                    label="Review Filter",
+                )
+            with gr.Row():
+                library_search_button = gr.Button("Transcript Library'yi Tara")
+                library_refresh_button = gr.Button("Sonuclari Yenile")
+            library_summary = gr.Textbox(label="Library Ozet", lines=2, interactive=False)
+            library_table = gr.Dataframe(
+                headers=["ID", "Dil", "Model", "Status", "Reviewed", "Snippet"],
+                datatype=["str", "str", "str", "str", "str", "str"],
+                interactive=False,
+                wrap=True,
+                label="Transcript Sonuclari",
+            )
+            library_preview = gr.Textbox(label="Ilk Eslesen Transcript", lines=14, interactive=False)
+            with gr.Row():
+                review_targets = gr.Textbox(
+                    value="",
+                    lines=4,
+                    label="Review Target ID'leri",
+                    placeholder="Her satira bir transcript ID yaz.\nBos birakip gorunen sonuclari uygula secenegini acabilirsin.",
+                )
+                review_note = gr.Textbox(
+                    value="",
+                    lines=4,
+                    label="Review Notu",
+                    placeholder="ornegin: isimler kontrol edildi, tekrar gecilecek",
+                )
+            with gr.Row():
+                review_status = gr.Dropdown(
+                    choices=REVIEW_STATUS_CHOICES,
+                    value="reviewed",
+                    label="Yeni Review Status",
+                )
+                review_apply_visible = gr.Checkbox(
+                    value=False,
+                    label="Gorunen Sonuclara Uygula",
+                )
+                apply_review_button = gr.Button("Review Status Uygula")
+            review_status_log = gr.Textbox(label="Review Log", lines=3, interactive=False)
 
         run_button.click(
             fn=run_batch,
@@ -393,6 +481,120 @@ def build_demo() -> gr.Blocks:
             inputs=[output_dir],
             outputs=[watch_table, watch_logs],
         )
+        save_profile_button.click(
+            fn=save_current_profile,
+            inputs=[
+                profile_name,
+                saved_profile,
+                model,
+                language,
+                task,
+                device,
+                compute_type,
+                output_formats,
+                beam_size,
+                batch_size,
+                vad_filter,
+                word_timestamps,
+                temperature,
+                vad_min_silence_ms,
+                cpu_threads,
+                output_dir,
+                initial_prompt,
+                condition_on_previous_text,
+                subtitle_max_chars,
+                subtitle_max_duration,
+                subtitle_pause_threshold,
+                subtitle_split_on_pause,
+                enable_diarization,
+                diarization_model,
+                diarization_token,
+                glossary_text,
+                glossary_case_sensitive,
+                glossary_whole_word,
+                watch_folder_path,
+                watch_archive_dir,
+                watch_recursive,
+                watch_poll_interval,
+                watch_stable_seconds,
+                watch_cycles,
+            ],
+            outputs=[saved_profile, profile_name, profile_status],
+        )
+        load_profile_button.click(
+            fn=load_saved_profile,
+            inputs=[saved_profile],
+            outputs=[
+                saved_profile,
+                profile_name,
+                model,
+                language,
+                task,
+                device,
+                compute_type,
+                output_formats,
+                beam_size,
+                batch_size,
+                vad_filter,
+                word_timestamps,
+                temperature,
+                vad_min_silence_ms,
+                cpu_threads,
+                output_dir,
+                initial_prompt,
+                condition_on_previous_text,
+                subtitle_max_chars,
+                subtitle_max_duration,
+                subtitle_pause_threshold,
+                subtitle_split_on_pause,
+                enable_diarization,
+                diarization_model,
+                diarization_token,
+                glossary_text,
+                glossary_case_sensitive,
+                glossary_whole_word,
+                watch_folder_path,
+                watch_archive_dir,
+                watch_recursive,
+                watch_poll_interval,
+                watch_stable_seconds,
+                watch_cycles,
+                profile_status,
+            ],
+        )
+        delete_profile_button.click(
+            fn=delete_saved_profile,
+            inputs=[saved_profile],
+            outputs=[saved_profile, profile_name, profile_status],
+        )
+        refresh_profiles_button.click(
+            fn=refresh_profile_choices,
+            inputs=[saved_profile],
+            outputs=[saved_profile, profile_status],
+        )
+        library_search_button.click(
+            fn=search_library_panel,
+            inputs=[output_dir, library_query, library_status_filter],
+            outputs=[library_table, library_summary, library_preview],
+        )
+        library_refresh_button.click(
+            fn=search_library_panel,
+            inputs=[output_dir, library_query, library_status_filter],
+            outputs=[library_table, library_summary, library_preview],
+        )
+        apply_review_button.click(
+            fn=apply_review_panel,
+            inputs=[
+                output_dir,
+                library_query,
+                library_status_filter,
+                review_targets,
+                review_status,
+                review_note,
+                review_apply_visible,
+            ],
+            outputs=[library_table, library_summary, library_preview, review_status_log],
+        )
 
         demo.queue(status_update_rate=1, default_concurrency_limit=1, max_size=8)
 
@@ -477,6 +679,219 @@ def clear_ui():
     return None, "", "", True, None, "", None, ""
 
 
+def serialize_profile_payload(
+    model: str,
+    language: str,
+    task: str,
+    device: str,
+    compute_type: str,
+    output_formats: list[str],
+    beam_size: int,
+    batch_size: int,
+    vad_filter: bool,
+    word_timestamps: bool,
+    temperature: float,
+    vad_min_silence_ms: int,
+    cpu_threads: int,
+    output_dir: str,
+    initial_prompt: str,
+    condition_on_previous_text: bool,
+    subtitle_max_chars: int,
+    subtitle_max_duration: float,
+    subtitle_pause_threshold: float,
+    subtitle_split_on_pause: bool,
+    enable_diarization: bool,
+    diarization_model: str,
+    diarization_token: str,
+    glossary_text: str,
+    glossary_case_sensitive: bool,
+    glossary_whole_word: bool,
+    watch_folder_path: str,
+    watch_archive_dir: str,
+    watch_recursive: bool,
+    watch_poll_interval: float,
+    watch_stable_seconds: float,
+    watch_cycles: int,
+) -> dict[str, object]:
+    return {
+        "model": model,
+        "language": language,
+        "task": task,
+        "device": device,
+        "compute_type": compute_type,
+        "output_formats": list(output_formats or []),
+        "beam_size": int(beam_size),
+        "batch_size": int(batch_size),
+        "vad_filter": bool(vad_filter),
+        "word_timestamps": bool(word_timestamps),
+        "temperature": float(temperature),
+        "vad_min_silence_ms": int(vad_min_silence_ms),
+        "cpu_threads": int(cpu_threads),
+        "output_dir": output_dir,
+        "initial_prompt": initial_prompt,
+        "condition_on_previous_text": bool(condition_on_previous_text),
+        "subtitle_max_chars": int(subtitle_max_chars),
+        "subtitle_max_duration": float(subtitle_max_duration),
+        "subtitle_pause_threshold": float(subtitle_pause_threshold),
+        "subtitle_split_on_pause": bool(subtitle_split_on_pause),
+        "enable_diarization": bool(enable_diarization),
+        "diarization_model": diarization_model,
+        "diarization_token": diarization_token,
+        "glossary_text": glossary_text,
+        "glossary_case_sensitive": bool(glossary_case_sensitive),
+        "glossary_whole_word": bool(glossary_whole_word),
+        "watch_folder_path": watch_folder_path,
+        "watch_archive_dir": watch_archive_dir,
+        "watch_recursive": bool(watch_recursive),
+        "watch_poll_interval": float(watch_poll_interval),
+        "watch_stable_seconds": float(watch_stable_seconds),
+        "watch_cycles": int(watch_cycles),
+    }
+
+
+def save_current_profile(
+    profile_name: str,
+    selected_profile: str | None,
+    model: str,
+    language: str,
+    task: str,
+    device: str,
+    compute_type: str,
+    output_formats: list[str],
+    beam_size: int,
+    batch_size: int,
+    vad_filter: bool,
+    word_timestamps: bool,
+    temperature: float,
+    vad_min_silence_ms: int,
+    cpu_threads: int,
+    output_dir: str,
+    initial_prompt: str,
+    condition_on_previous_text: bool,
+    subtitle_max_chars: int,
+    subtitle_max_duration: float,
+    subtitle_pause_threshold: float,
+    subtitle_split_on_pause: bool,
+    enable_diarization: bool,
+    diarization_model: str,
+    diarization_token: str,
+    glossary_text: str,
+    glossary_case_sensitive: bool,
+    glossary_whole_word: bool,
+    watch_folder_path: str,
+    watch_archive_dir: str,
+    watch_recursive: bool,
+    watch_poll_interval: float,
+    watch_stable_seconds: float,
+    watch_cycles: int,
+):
+    effective_name = profile_name.strip() or (selected_profile or "").strip()
+    if not effective_name:
+        raise gr.Error("Profil kaydetmek icin bir ad girmelisin.")
+
+    payload = serialize_profile_payload(
+        model,
+        language,
+        task,
+        device,
+        compute_type,
+        output_formats,
+        beam_size,
+        batch_size,
+        vad_filter,
+        word_timestamps,
+        temperature,
+        vad_min_silence_ms,
+        cpu_threads,
+        output_dir,
+        initial_prompt,
+        condition_on_previous_text,
+        subtitle_max_chars,
+        subtitle_max_duration,
+        subtitle_pause_threshold,
+        subtitle_split_on_pause,
+        enable_diarization,
+        diarization_model,
+        diarization_token,
+        glossary_text,
+        glossary_case_sensitive,
+        glossary_whole_word,
+        watch_folder_path,
+        watch_archive_dir,
+        watch_recursive,
+        watch_poll_interval,
+        watch_stable_seconds,
+        watch_cycles,
+    )
+    profiles = save_profile(effective_name, payload)
+    return gr.update(choices=sorted(profiles), value=effective_name), effective_name, f"[OK] Profil kaydedildi: {effective_name}"
+
+
+def load_saved_profile(profile_name: str | None):
+    effective_name = (profile_name or "").strip()
+    if not effective_name:
+        raise gr.Error("Yuklemek icin once kayitli bir profil sec.")
+
+    payload = get_profile(effective_name)
+    if not payload:
+        raise gr.Error(f"Profil bulunamadi: {effective_name}")
+
+    def value(key: str, default: object) -> object:
+        return payload.get(key, default)
+
+    return (
+        gr.update(choices=list_profile_names(), value=effective_name),
+        effective_name,
+        value("model", "large-v3"),
+        value("language", "auto"),
+        value("task", "transcribe"),
+        value("device", "auto"),
+        value("compute_type", "auto"),
+        value("output_formats", ["txt", "srt", "json"]),
+        value("beam_size", 5),
+        value("batch_size", 8),
+        value("vad_filter", True),
+        value("word_timestamps", True),
+        value("temperature", 0.0),
+        value("vad_min_silence_ms", 500),
+        value("cpu_threads", 0),
+        value("output_dir", str(DEFAULT_OUTPUT_DIR)),
+        value("initial_prompt", ""),
+        value("condition_on_previous_text", False),
+        value("subtitle_max_chars", 42),
+        value("subtitle_max_duration", 6.0),
+        value("subtitle_pause_threshold", 0.6),
+        value("subtitle_split_on_pause", True),
+        value("enable_diarization", False),
+        value("diarization_model", "pyannote/speaker-diarization-3.1"),
+        value("diarization_token", ""),
+        value("glossary_text", ""),
+        value("glossary_case_sensitive", False),
+        value("glossary_whole_word", True),
+        value("watch_folder_path", ""),
+        value("watch_archive_dir", ""),
+        value("watch_recursive", True),
+        value("watch_poll_interval", 5.0),
+        value("watch_stable_seconds", 10.0),
+        value("watch_cycles", 6),
+        f"[OK] Profil yuklendi: {effective_name}",
+    )
+
+
+def delete_saved_profile(profile_name: str | None):
+    effective_name = (profile_name or "").strip()
+    if not effective_name:
+        raise gr.Error("Silmek icin once bir profil sec.")
+    profiles = delete_profile(effective_name)
+    return gr.update(choices=sorted(profiles), value=None), "", f"[OK] Profil silindi: {effective_name}"
+
+
+def refresh_profile_choices(selected_profile: str | None):
+    names = list_profile_names()
+    current = selected_profile if selected_profile in names else None
+    return gr.update(choices=names, value=current), f"[INFO] {len(names)} profil bulundu."
+
+
 def refresh_system_status(output_dir: str) -> str:
     target = output_dir.strip() or str(DEFAULT_OUTPUT_DIR)
     return render_system_status(detect_system_status(target))
@@ -488,6 +903,41 @@ def refresh_watch_panel(output_dir: str) -> tuple[list[list[str]], str]:
     if not rows:
         return [], "[INFO] Watch gecmisi henuz bos."
     return rows, f"[INFO] {len(rows)} kayitli watch sonucu bulundu."
+
+
+def search_library_panel(output_dir: str, query: str, status_filter: str):
+    target = output_dir.strip() or str(DEFAULT_OUTPUT_DIR)
+    records, summary = search_transcripts(target, query=query, status_filter=status_filter)
+    return records_to_rows(records), summary, build_preview(records)
+
+
+def apply_review_panel(
+    output_dir: str,
+    query: str,
+    status_filter: str,
+    review_targets_text: str,
+    review_status: str,
+    review_note: str,
+    review_apply_visible: bool,
+):
+    target = output_dir.strip() or str(DEFAULT_OUTPUT_DIR)
+    transcript_ids = extract_transcript_ids(review_targets_text)
+    if not transcript_ids and review_apply_visible:
+        records, _ = search_transcripts(target, query=query, status_filter=status_filter)
+        transcript_ids = [record.transcript_id for record in records]
+
+    if not transcript_ids:
+        raise gr.Error("Review icin en az bir transcript ID gir ya da gorunen sonuclari uygula secenegini ac.")
+
+    updated_count = update_review_status(
+        target,
+        transcript_ids,
+        status=review_status,
+        note=review_note,
+    )
+    records, summary = search_transcripts(target, query=query, status_filter=status_filter)
+    message = f"[OK] {updated_count} transcript guncellendi. Yeni status: {review_status}"
+    return records_to_rows(records), summary, build_preview(records), message
 
 
 def run_batch(

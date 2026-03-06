@@ -9,3 +9,5 @@ build/
 dist/
 .pytest_cache/
 *.log
+.massscriber/
+Massscriber.spec

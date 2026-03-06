@@ -25,6 +25,8 @@ It is designed for people who want:
 - Folder watch CLI workflow for auto-transcribing new media files
 - UI watch panel with live logs and history refresh
 - Glossary-aware transcript cleanup for names, brands, and recurring corrections
+- Saved workflow profiles for watch, glossary, and transcription presets
+- Transcript library search with batch review status tracking
 - Built-in system health panel plus `doctor` CLI command
 - Live stage-by-stage progress for long-running transcriptions
 - CLI mode for automation and power users
@@ -103,6 +105,8 @@ The UI also now includes:
 - a live system status panel for CUDA/runtime health
 - a watch panel for repeated folder scans
 - glossary rules for post-transcription cleanup
+- saved workflow profiles for repeatable presets
+- a transcript library panel for search and batch review
 
 ### Use the CLI
 
@@ -134,6 +138,33 @@ massscriber watch "C:\audio\incoming" --model turbo --archive-dir "C:\audio\done
 ```powershell
 massscriber doctor
 ```
+
+## Workflow Profiles
+
+If you reuse the same combinations of model, glossary rules, watch folder, or subtitle settings, save them as a profile in the UI.
+
+- Save the current form values into a named reusable preset
+- Reload a preset with one click before starting a job
+- Delete or refresh saved profile lists without leaving the app
+
+This is useful for keeping separate setups like:
+
+- podcast cleanup
+- meeting transcription
+- TV episode subtitle prep
+- folder-watch automation for incoming recordings
+
+## Transcript Library and Batch Review
+
+The UI now includes a transcript library panel that scans your output directory and builds a searchable review table.
+
+- Search transcript text and metadata from previous runs
+- Filter by review state: `pending`, `reviewed`, `needs-edit`, `approved`
+- Preview transcript snippets before opening files manually
+- Apply review status updates to selected transcript IDs
+- Bulk-apply a review status to the visible filtered result set
+
+This gives you a lightweight local review workflow without needing a separate database service.
 
 ## Recommended Settings
 
@@ -260,15 +291,17 @@ python -m py_compile app.py massscriber\__init__.py massscriber\types.py massscr
 - Folder watch and auto-transcribe workflows now exist in the CLI with persistent state and optional archiving.
 - Folder watch is now available in the UI for repeated scan sessions.
 - Glossary-aware cleanup and a built-in doctor/status surface are now part of the core app.
+- Saved workflow profiles are now available for recurring transcription setups.
+- Transcript library search and batch review are now built into the UI.
 - Desktop packaging now has a local build script and a Windows artifact workflow.
 
 ## Next Roadmap
 
 - Improve diarization with speaker-aware word-level subtitle cues
 - Produce signed desktop installers instead of raw bundles
-- Add saved watch/glossary profiles and one-click workflow presets
-- Add transcript search, batch review, and glossary-aware correction tools
 - Add project-level transcript libraries for large collections
+- Add persistent batch actions such as export queues and review assignments
+- Add richer transcript editing and glossary-assisted correction workflows
 
 ## License
 

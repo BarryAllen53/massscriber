@@ -6,6 +6,9 @@ The format is inspired by Keep a Changelog and the project follows Semantic Vers
 
 ## [Unreleased]
 
+- Added saved workflow profiles in the UI for reusable transcription, glossary, subtitle, and watch presets.
+- Added a transcript library panel with text search, review-state filters, transcript previews, and batch review updates.
+
 ## [0.2.0] - 2026-03-06
 
 - Added configurable subtitle regrouping controls for cleaner `srt` and `vtt` exports.
