@@ -6,6 +6,10 @@ The format is inspired by Keep a Changelog and the project follows Semantic Vers
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-03-06
+
+### Added
+
 - Added GitHub Actions CI for install, import, compile, and unit-test checks.
 - Added tag-driven GitHub release automation.
 - Added a dedicated release process document.
