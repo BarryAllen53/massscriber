@@ -32,6 +32,8 @@ class TranscriberProgressTests(TestCase):
             site_packages = Path(tmpdir) / "site-packages"
             cublas_dir = site_packages / "nvidia" / "cublas" / "bin"
             cudnn_dir = site_packages / "nvidia" / "cudnn" / "bin"
+            venv_root = str(Path(tmpdir) / "venv")
+            base_root = str(Path(tmpdir) / "base")
             cublas_dir.mkdir(parents=True)
             cudnn_dir.mkdir(parents=True)
 
@@ -52,11 +54,11 @@ class TranscriberProgressTests(TestCase):
             ), patch.object(
                 transcriber.sys,
                 "prefix",
-                str(Path(tmpdir) / "venv"),
+                venv_root,
             ), patch.object(
                 transcriber.sys,
                 "base_prefix",
-                str(Path(tmpdir) / "base"),
+                base_root,
             ), patch.dict(
                 transcriber.os.environ,
                 {"PATH": "C:\\Windows\\System32"},

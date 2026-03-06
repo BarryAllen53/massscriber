@@ -6,6 +6,10 @@ The format is inspired by Keep a Changelog and the project follows Semantic Vers
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-03-06
+
+- Fixed the Linux CI failure by computing temporary Windows-path test inputs before patching `os.name` to `nt` in the CUDA runtime test.
+
 ## [0.3.2] - 2026-03-06
 
 - Fixed the Windows CUDA runtime path test so it no longer fails on Linux runners where `os.add_dll_directory` is unavailable.
