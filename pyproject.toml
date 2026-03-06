@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "massscriber"
+version = "0.1.0"
+description = "Local, free, multilingual audio transcription app powered by faster-whisper."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "Codex" }
+]
+dependencies = [
+  "faster-whisper>=1.2.1,<2.0.0",
+  "gradio>=5.25.0,<6.0.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["massscriber*"]
