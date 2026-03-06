@@ -30,6 +30,8 @@ It is designed for people who want:
 - Multi-provider transcription engine for local and hosted APIs
 - OpenAI, Groq, Deepgram, AssemblyAI, and ElevenLabs integrations
 - Provider-specific API key, timeout, polling, speaker-label, and smart-format controls
+- Provider remote-URL ingest for Deepgram and AssemblyAI
+- Automatic local fallback when a hosted provider fails or rejects a file
 - JSON outputs with provider metadata and optional raw API responses
 - Built-in system health panel plus `doctor` CLI command
 - Live stage-by-stage progress for long-running transcriptions
@@ -71,14 +73,14 @@ Important note: no speech recognition model is perfectly error-free. For a fully
 
 Massscriber now supports both local and hosted transcription engines through one shared UI and CLI.
 
-| Provider | Type | API key env | Notes |
+| Provider | Type | API key env | Remote URL | Typical upload limit | Notes |
 | --- | --- | --- | --- |
-| `local` | Free / local | none | Uses `faster-whisper`, unlimited runtime, best privacy |
-| `openai` | Paid API | `OPENAI_API_KEY` | Supports transcription and translation |
-| `groq` | Hosted API | `GROQ_API_KEY` | Very fast hosted Whisper-style transcription |
-| `deepgram` | Hosted API | `DEEPGRAM_API_KEY` | Strong utterance and speaker metadata support |
-| `assemblyai` | Hosted API | `ASSEMBLYAI_API_KEY` | Async transcription flow with rich review metadata |
-| `elevenlabs` | Hosted API | `ELEVENLABS_API_KEY` | Hosted Scribe models with speaker-aware options |
+| `local` | Free / local | none | no | unlimited | Uses `faster-whisper`, unlimited runtime, best privacy |
+| `openai` | Paid API | `OPENAI_API_KEY` | no | ~25 MB | Supports transcription and translation |
+| `groq` | Hosted API | `GROQ_API_KEY` | no | ~25 MB | Very fast hosted Whisper-style transcription |
+| `deepgram` | Hosted API | `DEEPGRAM_API_KEY` | yes | large / URL-friendly | Strong utterance and speaker metadata support |
+| `assemblyai` | Hosted API | `ASSEMBLYAI_API_KEY` | yes | large / URL-friendly | Async transcription flow with rich review metadata |
+| `elevenlabs` | Hosted API | `ELEVENLABS_API_KEY` | no | ~1000 MB | Hosted Scribe models with speaker-aware options |
 
 Massscriber normalizes all providers into the same downstream features:
 
@@ -88,6 +90,8 @@ Massscriber normalizes all providers into the same downstream features:
 - review-state tracking
 - workflow profiles
 - folder watch automation
+- remote URL ingest where the provider supports it
+- hosted-to-local fallback for more resilient long jobs
 
 ## Provider Examples
 
@@ -112,11 +116,21 @@ $env:DEEPGRAM_API_KEY="dg_..."
 massscriber transcribe "C:\audio\call.wav" --provider deepgram --model nova-3 --provider-speaker-labels --formats txt srt json
 ```
 
+```powershell
+$env:DEEPGRAM_API_KEY="dg_..."
+massscriber transcribe --provider deepgram --provider-remote-url "https://cdn.example.com/call.mp3" --formats txt json
+```
+
 ### AssemblyAI
 
 ```powershell
 $env:ASSEMBLYAI_API_KEY="..."
 massscriber transcribe "C:\audio\interview.mp3" --provider assemblyai --provider-speaker-labels --provider-keywords "Massscriber`nOpenAI"
+```
+
+```powershell
+$env:ASSEMBLYAI_API_KEY="..."
+massscriber transcribe --provider assemblyai --provider-remote-url "https://cdn.example.com/interview.mp3" --provider-speaker-labels --formats txt srt json
 ```
 
 ### ElevenLabs
@@ -180,11 +194,19 @@ Provider mode adds these controls in both UI and CLI:
 - provider model selection
 - API key or env-var fallback
 - base URL override for gateways and proxies
+- remote audio URL for provider-side ingest where supported
 - timeout and polling controls
 - smart formatting toggle
 - speaker label toggle for supported APIs
 - keyword / word-boost field
 - optional raw response capture into JSON output
+- hosted-provider failure fallback to local processing
+
+If you hit hosted upload-size limits or browser upload issues:
+
+- use local disk mode for direct local processing
+- or switch to a provider with remote URL ingest and pass `--provider-remote-url`
+- or leave local fallback enabled so the app can continue with the local engine
 
 ### Use the CLI
 
@@ -390,6 +412,9 @@ python -m py_compile app.py massscriber\__init__.py massscriber\types.py massscr
 - Saved workflow profiles are now available for recurring transcription setups.
 - Transcript library search and batch review are now built into the UI.
 - Multi-provider hosted API transcription is now integrated across UI, CLI, watch mode, profiles, and exports.
+- Provider-side remote URL ingestion is now available for Deepgram and AssemblyAI.
+- Hosted provider failures can now fall back to the local engine automatically.
+- Linux CI now passes the Windows CUDA runtime path test reliably.
 - Desktop packaging now has a local build script and a Windows artifact workflow.
 
 ## Next Roadmap
@@ -400,7 +425,8 @@ python -m py_compile app.py massscriber\__init__.py massscriber\types.py massscr
 - Add persistent batch actions such as export queues and review assignments
 - Add richer transcript editing and glossary-assisted correction workflows
 - Add provider failover chains and cost/performance routing presets
-- Add remote URL ingestion for providers that support direct media fetch
+- Add multi-provider chain policies such as "try Groq, then Deepgram, then local"
+- Add per-provider cost estimation and budget caps for hosted jobs
 
 ## License
 

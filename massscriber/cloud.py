@@ -7,6 +7,7 @@ import mimetypes
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 
@@ -18,6 +19,7 @@ from massscriber.providers import (
     get_provider_base_url,
     provider_file_limit_warning,
     provider_supports_speaker_labels,
+    provider_supports_remote_url,
     provider_supports_translation,
     provider_uses_remote_api,
     redact_secret,
@@ -48,14 +50,24 @@ class RemoteTranscriptionEngine:
         if not provider_uses_remote_api(provider):
             raise ProviderError("Remote engine local provider ile cagrildi.")
 
-        source = Path(audio_path).expanduser().resolve()
-        if not source.exists():
+        remote_audio_url = (settings.provider_remote_url or "").strip()
+        uses_remote_url = bool(remote_audio_url)
+        if uses_remote_url and not provider_supports_remote_url(provider):
+            raise ProviderError(
+                f"{PROVIDER_LABELS.get(provider, provider)} remote URL ingest desteklemiyor."
+            )
+
+        source = _resolve_source_reference(audio_path, remote_audio_url)
+        if not uses_remote_url and not source.exists():
             raise FileNotFoundError(f"Audio file not found: {source}")
 
         yield 0.02, f"{source.name}: {PROVIDER_LABELS.get(provider, provider)} icin hazirlaniyor", None
-        warning = provider_file_limit_warning(provider, source.stat().st_size)
-        if warning:
-            raise ProviderError(warning)
+        if uses_remote_url:
+            yield 0.04, f"{source.name}: provider uzak URL uzerinden dosyayi cekecek", None
+        else:
+            warning = provider_file_limit_warning(provider, source.stat().st_size)
+            if warning:
+                raise ProviderError(warning)
 
         api_key = get_provider_api_key(provider, settings.provider_api_key)
         if not api_key:
@@ -81,6 +93,7 @@ class RemoteTranscriptionEngine:
                 settings=settings,
                 api_key=api_key,
                 model=provider_model,
+                remote_audio_url=remote_audio_url,
             )
             result = self._build_openai_family_result(
                 source=source,
@@ -90,6 +103,7 @@ class RemoteTranscriptionEngine:
                 model=provider_model,
                 payload=payload,
                 request_id=request_id,
+                remote_audio_url=remote_audio_url,
             )
         elif provider == "groq":
             payload, request_id = self._call_openai_family(
@@ -98,6 +112,7 @@ class RemoteTranscriptionEngine:
                 settings=settings,
                 api_key=api_key,
                 model=provider_model,
+                remote_audio_url=remote_audio_url,
             )
             result = self._build_openai_family_result(
                 source=source,
@@ -107,6 +122,7 @@ class RemoteTranscriptionEngine:
                 model=provider_model,
                 payload=payload,
                 request_id=request_id,
+                remote_audio_url=remote_audio_url,
             )
         elif provider == "deepgram":
             payload, request_id = self._call_deepgram(
@@ -114,6 +130,7 @@ class RemoteTranscriptionEngine:
                 settings=settings,
                 api_key=api_key,
                 model=provider_model,
+                remote_audio_url=remote_audio_url,
             )
             result = self._build_deepgram_result(
                 source=source,
@@ -122,6 +139,7 @@ class RemoteTranscriptionEngine:
                 model=provider_model,
                 payload=payload,
                 request_id=request_id,
+                remote_audio_url=remote_audio_url,
             )
         elif provider == "assemblyai":
             payload, request_id = self._call_assemblyai(
@@ -129,6 +147,7 @@ class RemoteTranscriptionEngine:
                 settings=settings,
                 api_key=api_key,
                 model=provider_model,
+                remote_audio_url=remote_audio_url,
             )
             result = self._build_assemblyai_result(
                 source=source,
@@ -137,6 +156,7 @@ class RemoteTranscriptionEngine:
                 model=provider_model,
                 payload=payload,
                 request_id=request_id,
+                remote_audio_url=remote_audio_url,
             )
         elif provider == "elevenlabs":
             payload, request_id = self._call_elevenlabs(
@@ -144,6 +164,7 @@ class RemoteTranscriptionEngine:
                 settings=settings,
                 api_key=api_key,
                 model=provider_model,
+                remote_audio_url=remote_audio_url,
             )
             result = self._build_elevenlabs_result(
                 source=source,
@@ -152,6 +173,7 @@ class RemoteTranscriptionEngine:
                 model=provider_model,
                 payload=payload,
                 request_id=request_id,
+                remote_audio_url=remote_audio_url,
             )
         else:
             raise ProviderError(f"Desteklenmeyen provider: {provider}")
@@ -169,6 +191,7 @@ class RemoteTranscriptionEngine:
         settings: TranscriptionSettings,
         api_key: str,
         model: str,
+        remote_audio_url: str = "",
     ) -> tuple[dict[str, object], str | None]:
         endpoint = "/audio/translations" if settings.task == "translate" else "/audio/transcriptions"
         response_format = "verbose_json" if model.startswith("whisper") else "json"
@@ -188,6 +211,9 @@ class RemoteTranscriptionEngine:
             data.append(("timestamp_granularities[]", "word"))
             data.append(("timestamp_granularities[]", "segment"))
 
+        if remote_audio_url:
+            raise ProviderError(f"{PROVIDER_LABELS.get(provider, provider)} remote URL ingest desteklemiyor.")
+
         response = self._request(
             provider=provider,
             method="POST",
@@ -206,6 +232,7 @@ class RemoteTranscriptionEngine:
         settings: TranscriptionSettings,
         api_key: str,
         model: str,
+        remote_audio_url: str = "",
     ) -> tuple[dict[str, object], str | None]:
         params: dict[str, str] = {
             "model": model,
@@ -223,17 +250,30 @@ class RemoteTranscriptionEngine:
         if settings.provider_speaker_labels and provider_supports_speaker_labels("deepgram"):
             params["diarize"] = "true"
 
+        request_kwargs: dict[str, object]
+        headers = {"Authorization": f"Token {api_key}"}
+        if remote_audio_url:
+            request_kwargs = {
+                "headers": headers,
+                "params": params,
+                "json": {"url": remote_audio_url},
+            }
+        else:
+            request_kwargs = {
+                "headers": {
+                    **headers,
+                    "Content-Type": _guess_content_type(source),
+                },
+                "params": params,
+                "content": source.read_bytes(),
+            }
+
         response = self._request(
             provider="deepgram",
             method="POST",
             url=f"{get_provider_base_url('deepgram', settings.provider_base_url)}/listen",
-            headers={
-                "Authorization": f"Token {api_key}",
-                "Content-Type": _guess_content_type(source),
-            },
-            params=params,
-            content=source.read_bytes(),
             timeout_seconds=settings.provider_timeout_seconds,
+            **request_kwargs,
         )
         return _ensure_json(response), response.headers.get("dg-request-id")
 
@@ -244,21 +284,24 @@ class RemoteTranscriptionEngine:
         settings: TranscriptionSettings,
         api_key: str,
         model: str,
+        remote_audio_url: str = "",
     ) -> tuple[dict[str, object], str | None]:
         base_url = get_provider_base_url("assemblyai", settings.provider_base_url)
         headers = {"authorization": api_key}
-        upload_response = self._request(
-            provider="assemblyai",
-            method="POST",
-            url=f"{base_url}/upload",
-            headers=headers,
-            content=source.read_bytes(),
-            timeout_seconds=settings.provider_timeout_seconds,
-        )
-        upload_payload = _ensure_json(upload_response)
-        audio_url = str(upload_payload.get("upload_url") or "").strip()
+        audio_url = remote_audio_url
         if not audio_url:
-            raise ProviderError("AssemblyAI upload_url donmedi.")
+            upload_response = self._request(
+                provider="assemblyai",
+                method="POST",
+                url=f"{base_url}/upload",
+                headers=headers,
+                content=source.read_bytes(),
+                timeout_seconds=settings.provider_timeout_seconds,
+            )
+            upload_payload = _ensure_json(upload_response)
+            audio_url = str(upload_payload.get("upload_url") or "").strip()
+            if not audio_url:
+                raise ProviderError("AssemblyAI upload_url donmedi.")
 
         transcript_payload: dict[str, object] = {
             "audio_url": audio_url,
@@ -312,7 +355,11 @@ class RemoteTranscriptionEngine:
         settings: TranscriptionSettings,
         api_key: str,
         model: str,
+        remote_audio_url: str = "",
     ) -> tuple[dict[str, object], str | None]:
+        if remote_audio_url:
+            raise ProviderError("ElevenLabs remote URL ingest desteklemiyor.")
+
         data: dict[str, str] = {
             "model_id": model,
             "diarize": "true" if settings.provider_speaker_labels else "false",
@@ -369,6 +416,7 @@ class RemoteTranscriptionEngine:
         model: str,
         payload: dict[str, object],
         request_id: str | None,
+        remote_audio_url: str = "",
     ) -> TranscriptionResult:
         segments, text = _parse_openai_family_payload(payload)
         return _finalize_result(
@@ -382,7 +430,7 @@ class RemoteTranscriptionEngine:
             language=str(payload.get("language") or settings.language or "unknown"),
             duration=_coerce_optional_float(payload.get("duration")),
             request_id=request_id,
-            metadata={"raw_response": payload} if settings.provider_keep_raw_response else {},
+            metadata=_build_metadata(settings, payload, remote_audio_url),
         )
 
     def _build_deepgram_result(
@@ -394,6 +442,7 @@ class RemoteTranscriptionEngine:
         model: str,
         payload: dict[str, object],
         request_id: str | None,
+        remote_audio_url: str = "",
     ) -> TranscriptionResult:
         segments, text, language, duration = _parse_deepgram_payload(payload)
         return _finalize_result(
@@ -407,7 +456,7 @@ class RemoteTranscriptionEngine:
             language=language or settings.language or "unknown",
             duration=duration,
             request_id=request_id,
-            metadata={"raw_response": payload} if settings.provider_keep_raw_response else {},
+            metadata=_build_metadata(settings, payload, remote_audio_url),
         )
 
     def _build_assemblyai_result(
@@ -419,6 +468,7 @@ class RemoteTranscriptionEngine:
         model: str,
         payload: dict[str, object],
         request_id: str | None,
+        remote_audio_url: str = "",
     ) -> TranscriptionResult:
         segments, text = _parse_assemblyai_payload(payload)
         return _finalize_result(
@@ -433,7 +483,7 @@ class RemoteTranscriptionEngine:
             duration=_coerce_optional_float(payload.get("audio_duration")),
             request_id=request_id,
             job_id=str(payload.get("id") or "") or None,
-            metadata={"raw_response": payload} if settings.provider_keep_raw_response else {},
+            metadata=_build_metadata(settings, payload, remote_audio_url),
         )
 
     def _build_elevenlabs_result(
@@ -445,6 +495,7 @@ class RemoteTranscriptionEngine:
         model: str,
         payload: dict[str, object],
         request_id: str | None,
+        remote_audio_url: str = "",
     ) -> TranscriptionResult:
         segments, text = _parse_elevenlabs_payload(payload)
         return _finalize_result(
@@ -458,8 +509,29 @@ class RemoteTranscriptionEngine:
             language=str(payload.get("language_code") or settings.language or "unknown"),
             duration=_coerce_optional_float(payload.get("audio_duration") or payload.get("duration_seconds")),
             request_id=request_id,
-            metadata={"raw_response": payload} if settings.provider_keep_raw_response else {},
+            metadata=_build_metadata(settings, payload, remote_audio_url),
         )
+
+
+def _build_metadata(
+    settings: TranscriptionSettings,
+    payload: dict[str, object],
+    remote_audio_url: str,
+) -> dict[str, object]:
+    metadata: dict[str, object] = {}
+    if settings.provider_keep_raw_response:
+        metadata["raw_response"] = payload
+    if remote_audio_url:
+        metadata["remote_audio_url"] = remote_audio_url
+    return metadata
+
+
+def _resolve_source_reference(audio_path: str | Path, remote_audio_url: str) -> Path:
+    if remote_audio_url:
+        parsed = urlparse(remote_audio_url)
+        candidate_name = Path(parsed.path).name or parsed.netloc or "remote-audio"
+        return Path(candidate_name)
+    return Path(audio_path).expanduser().resolve()
 
 
 def _finalize_result(

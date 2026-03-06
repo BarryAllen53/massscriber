@@ -6,6 +6,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from massscriber import transcriber
+from massscriber.cloud import ProviderError
 from massscriber.diarization import SpeakerTurn
 from massscriber.transcriber import TranscriptionEngine, WhisperRuntime
 from massscriber.types import TranscriptionSettings
@@ -29,6 +30,7 @@ class FakeCudaFailingModel:
 class TranscriberProgressTests(TestCase):
     def test_configure_windows_cuda_runtime_paths_registers_nvidia_bins(self):
         with TemporaryDirectory() as tmpdir:
+            path_type = type(Path(tmpdir))
             site_packages = Path(tmpdir) / "site-packages"
             cublas_dir = site_packages / "nvidia" / "cublas" / "bin"
             cudnn_dir = site_packages / "nvidia" / "cudnn" / "bin"
@@ -51,6 +53,10 @@ class TranscriberProgressTests(TestCase):
                 transcriber.site,
                 "getusersitepackages",
                 return_value=str(site_packages),
+            ), patch.object(
+                transcriber,
+                "Path",
+                path_type,
             ), patch.object(
                 transcriber.sys,
                 "prefix",
@@ -159,3 +165,34 @@ class TranscriberProgressTests(TestCase):
                 result = events[-1][2]
                 self.assertIsNotNone(result)
                 self.assertEqual(result.segments[0].speaker, "Speaker 1")
+
+    def test_stream_file_falls_back_from_remote_provider_to_local_engine(self):
+        settings = TranscriptionSettings(
+            provider="openai",
+            model="whisper-1",
+            output_formats=("txt",),
+            provider_fallback_to_local=True,
+        )
+        engine = TranscriptionEngine()
+
+        with TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            audio_path = tmp_path / "sample.wav"
+            audio_path.write_bytes(b"fake")
+
+            with patch.object(
+                engine._remote_engine,
+                "stream_file",
+                side_effect=ProviderError("remote timeout"),
+            ), patch.object(
+                WhisperRuntime,
+                "get_backend",
+                return_value=(FakeModel(), None, "cpu", "int8"),
+            ):
+                events = list(engine.stream_file(audio_path, settings, tmp_path / "outputs"))
+
+        self.assertTrue(any("local engine fallback" in message.lower() for _, message, _ in events))
+        result = events[-1][2]
+        self.assertIsNotNone(result)
+        self.assertEqual(result.provider, "local")
+        self.assertEqual(result.metadata["fallback_from_provider"], "openai")

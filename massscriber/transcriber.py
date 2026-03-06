@@ -7,9 +7,10 @@ import site
 import sys
 import threading
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 
-from massscriber.cloud import RemoteTranscriptionEngine
+from massscriber.cloud import ProviderError, RemoteTranscriptionEngine
 from massscriber.diarization import assign_speakers_to_segments, diarize_audio
 from massscriber.exporters import export_result, sanitize_name, to_plain_text
 from massscriber.postprocess import apply_glossary_to_segments, apply_glossary_to_text, build_glossary_summary
@@ -137,6 +138,15 @@ def build_base_name(audio_path: Path) -> str:
     return f"{sanitize_name(audio_path.stem)}_{digest}"
 
 
+def resolve_local_fallback_model(requested_model: str, task: str) -> str:
+    normalized = (requested_model or "").strip()
+    if normalized in SUPPORTED_MODELS:
+        if normalized == "turbo" and task == "translate":
+            return "large-v3"
+        return normalized
+    return "large-v3"
+
+
 class WhisperRuntime:
     _model_cache: dict[tuple[str, str, str, int | None], WhisperModel] = {}
     _pipeline_cache: dict[tuple[str, str, str, int | None], BatchedInferencePipeline] = {}
@@ -255,7 +265,33 @@ class TranscriptionEngine:
         output_dir: str | Path,
     ) -> Iterator[tuple[float, str, TranscriptionResult | None]]:
         if provider_uses_remote_api(settings.provider):
-            yield from self._remote_engine.stream_file(audio_path, settings, output_dir)
+            try:
+                yield from self._remote_engine.stream_file(audio_path, settings, output_dir)
+            except ProviderError as exc:
+                source_candidate = Path(str(audio_path)).expanduser()
+                if settings.provider_remote_url and not source_candidate.exists():
+                    raise
+                if not settings.provider_fallback_to_local:
+                    raise
+
+                fallback_model = resolve_local_fallback_model(settings.model, settings.task)
+                warning = (
+                    f"{Path(str(audio_path)).name}: {settings.provider} provider hatasi alindi "
+                    f"({exc}). Local engine fallback etkinlestiriliyor."
+                )
+                logger.warning("%s", warning)
+                yield 0.04, f"[UYARI] {warning}", None
+                fallback_settings = replace(
+                    settings,
+                    provider="local",
+                    model=fallback_model,
+                    provider_model=None,
+                )
+                for progress, message, maybe_result in self.stream_file(audio_path, fallback_settings, output_dir):
+                    if maybe_result is not None:
+                        maybe_result.metadata["fallback_from_provider"] = settings.provider
+                        maybe_result.metadata["fallback_reason"] = str(exc)
+                    yield progress, message, maybe_result
             return
 
         source = Path(audio_path).expanduser().resolve()

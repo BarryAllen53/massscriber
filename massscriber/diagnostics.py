@@ -5,7 +5,13 @@ import shutil
 import os
 from pathlib import Path
 
-from massscriber.providers import PROVIDERS, get_provider_env_keys, get_provider_models
+from massscriber.providers import (
+    PROVIDERS,
+    get_provider_env_keys,
+    get_provider_file_limit_mb,
+    get_provider_models,
+    provider_supports_remote_url,
+)
 from massscriber.transcriber import CONFIGURED_WINDOWS_CUDA_DIRS
 
 
@@ -39,6 +45,8 @@ def detect_system_status(output_dir: str | Path | None = None) -> dict[str, obje
             "env_keys": list(env_keys),
             "configured": any(bool(os.getenv(env_name, "").strip()) for env_name in env_keys),
             "models": get_provider_models(provider),
+            "remote_url_supported": provider_supports_remote_url(provider),
+            "file_limit_mb": get_provider_file_limit_mb(provider),
         }
 
     return {
@@ -86,7 +94,10 @@ def render_system_status(status: dict[str, object]) -> str:
                 continue
             env_keys = ", ".join(provider_info.get("env_keys", [])) or "env yok"
             configured = "hazir" if provider_info.get("configured") else "key yok"
-            lines.append(f"  - `{provider_name}`: {configured} ({env_keys})")
+            remote_url = "uzak-url var" if provider_info.get("remote_url_supported") else "uzak-url yok"
+            file_limit = provider_info.get("file_limit_mb", 0) or 0
+            limit_text = "sinir yok" if int(file_limit) <= 0 else f"{int(file_limit)} MB"
+            lines.append(f"  - `{provider_name}`: {configured} ({env_keys}, {remote_url}, limit={limit_text})")
     return "\n".join(lines)
 
 

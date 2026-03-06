@@ -5,9 +5,11 @@ from unittest.mock import patch
 from massscriber.providers import (
     get_provider_api_key,
     get_provider_default_model,
+    get_provider_file_limit_mb,
     get_provider_models,
     normalize_provider_name,
     provider_file_limit_warning,
+    provider_supports_remote_url,
     provider_supports_translation,
 )
 
@@ -32,3 +34,8 @@ class ProviderTests(TestCase):
         warning = provider_file_limit_warning("openai", 30 * 1024 * 1024)
         self.assertIsNotNone(warning)
         self.assertIn("25 MB", warning or "")
+
+    def test_remote_url_support_and_limits(self):
+        self.assertTrue(provider_supports_remote_url("deepgram"))
+        self.assertFalse(provider_supports_remote_url("openai"))
+        self.assertEqual(get_provider_file_limit_mb("assemblyai"), 2000)

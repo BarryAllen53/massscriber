@@ -43,6 +43,7 @@ class TranscriptionSettings:
     provider_speaker_labels: bool = False
     provider_keywords: str = ""
     provider_keep_raw_response: bool = False
+    provider_fallback_to_local: bool = True
     language: str | None = None
     task: TaskType = "transcribe"
     device: str = "auto"

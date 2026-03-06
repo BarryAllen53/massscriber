@@ -4,6 +4,7 @@ import argparse
 import logging
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import gradio as gr
 
@@ -20,8 +21,10 @@ from massscriber.providers import (
     PROVIDER_LABELS,
     get_provider_default_model,
     get_provider_env_keys,
+    get_provider_file_limit_mb,
     get_provider_models,
     normalize_provider_name,
+    provider_supports_remote_url,
     provider_supports_speaker_labels,
     provider_supports_translation,
     provider_uses_remote_api,
@@ -45,6 +48,9 @@ def render_provider_help(provider_name: str) -> str:
     env_keys = ", ".join(get_provider_env_keys(provider)) or "yok"
     translation = "evet" if provider_supports_translation(provider) else "hayir"
     speakers = "evet" if provider_supports_speaker_labels(provider) else "hayir"
+    remote_url = "evet" if provider_supports_remote_url(provider) else "hayir"
+    limit_mb = get_provider_file_limit_mb(provider)
+    limit_text = "sinir yok" if limit_mb <= 0 else f"{limit_mb} MB"
     models = ", ".join(get_provider_models(provider))
     return "\n".join(
         [
@@ -53,7 +59,10 @@ def render_provider_help(provider_name: str) -> str:
             f"- API key env: `{env_keys}`",
             f"- Translation destegi: `{translation}`",
             f"- Speaker label destegi: `{speakers}`",
+            f"- Remote URL ingest: `{remote_url}`",
+            f"- Dosya limiti: `{limit_text}`",
             f"- Modeller: `{models}`",
+            "- Hosted provider hata verirse local fallback varsayilan olarak aciktir.",
         ]
     )
 
@@ -64,11 +73,21 @@ def update_provider_ui(provider_name: str):
     default_model = get_provider_default_model(provider)
     task_choices = ["transcribe", "translate"] if provider_supports_translation(provider) else ["transcribe"]
     task_value = "transcribe" if "translate" not in task_choices else "transcribe"
+    remote_url_supported = provider_supports_remote_url(provider)
     return (
         gr.update(choices=model_choices, value=default_model),
         gr.update(choices=task_choices, value=task_value),
         render_provider_help(provider),
         gr.update(value=False, interactive=provider_supports_speaker_labels(provider)),
+        gr.update(
+            value="",
+            interactive=remote_url_supported,
+            placeholder=(
+                "Provider'in cekebilecegi HTTPS medya URL'si"
+                if remote_url_supported
+                else "Bu provider remote URL ingest desteklemiyor"
+            ),
+        ),
     )
 
 
@@ -203,6 +222,12 @@ def build_demo() -> gr.Blocks:
                     label="Provider Base URL (opsiyonel)",
                     placeholder="Ozel gateway ya da proxy kullaniyorsan gir",
                 )
+                provider_remote_url = gr.Textbox(
+                    value="",
+                    label="Provider Remote Audio URL (opsiyonel)",
+                    placeholder="Deepgram / AssemblyAI icin dosyayi provider'in cekebilecegi URL",
+                    interactive=False,
+                )
             with gr.Row():
                 provider_timeout_seconds = gr.Slider(
                     minimum=30,
@@ -230,6 +255,10 @@ def build_demo() -> gr.Blocks:
                 provider_keep_raw_response = gr.Checkbox(
                     value=False,
                     label="Raw API Response'u JSON'a ekle",
+                )
+                provider_fallback_to_local = gr.Checkbox(
+                    value=True,
+                    label="Hosted API hatasinda local fallback",
                 )
             provider_keywords = gr.Textbox(
                 value="",
@@ -512,12 +541,14 @@ def build_demo() -> gr.Blocks:
                 word_timestamps,
                 provider_api_key,
                 provider_base_url,
+                provider_remote_url,
                 provider_timeout_seconds,
                 provider_poll_interval,
                 provider_smart_format,
                 provider_speaker_labels,
                 provider_keywords,
                 provider_keep_raw_response,
+                provider_fallback_to_local,
                 temperature,
                 vad_min_silence_ms,
                 cpu_threads,
@@ -568,12 +599,14 @@ def build_demo() -> gr.Blocks:
                 word_timestamps,
                 provider_api_key,
                 provider_base_url,
+                provider_remote_url,
                 provider_timeout_seconds,
                 provider_poll_interval,
                 provider_smart_format,
                 provider_speaker_labels,
                 provider_keywords,
                 provider_keep_raw_response,
+                provider_fallback_to_local,
                 temperature,
                 vad_min_silence_ms,
                 cpu_threads,
@@ -616,12 +649,14 @@ def build_demo() -> gr.Blocks:
                 word_timestamps,
                 provider_api_key,
                 provider_base_url,
+                provider_remote_url,
                 provider_timeout_seconds,
                 provider_poll_interval,
                 provider_smart_format,
                 provider_speaker_labels,
                 provider_keywords,
                 provider_keep_raw_response,
+                provider_fallback_to_local,
                 temperature,
                 vad_min_silence_ms,
                 cpu_threads,
@@ -666,12 +701,14 @@ def build_demo() -> gr.Blocks:
                 word_timestamps,
                 provider_api_key,
                 provider_base_url,
+                provider_remote_url,
                 provider_timeout_seconds,
                 provider_poll_interval,
                 provider_smart_format,
                 provider_speaker_labels,
                 provider_keywords,
                 provider_keep_raw_response,
+                provider_fallback_to_local,
                 temperature,
                 vad_min_silence_ms,
                 cpu_threads,
@@ -735,7 +772,7 @@ def build_demo() -> gr.Blocks:
         provider.change(
             fn=update_provider_ui,
             inputs=[provider],
-            outputs=[model, task, provider_status, provider_speaker_labels],
+            outputs=[model, task, provider_status, provider_speaker_labels, provider_remote_url],
         )
 
         demo.queue(status_update_rate=1, default_concurrency_limit=1, max_size=8)
@@ -759,6 +796,11 @@ def strip_wrapping_quotes(value: str) -> str:
 
 def is_supported_media_file(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
+
+
+def build_remote_source_name(remote_url: str) -> str:
+    parsed = urlparse(remote_url.strip())
+    return Path(parsed.path).name or parsed.netloc or "remote-audio"
 
 
 def collect_input_files(
@@ -835,12 +877,14 @@ def serialize_profile_payload(
     word_timestamps: bool,
     provider_api_key: str,
     provider_base_url: str,
+    provider_remote_url: str,
     provider_timeout_seconds: float,
     provider_poll_interval: float,
     provider_smart_format: bool,
     provider_speaker_labels: bool,
     provider_keywords: str,
     provider_keep_raw_response: bool,
+    provider_fallback_to_local: bool,
     temperature: float,
     vad_min_silence_ms: int,
     cpu_threads: int,
@@ -878,12 +922,14 @@ def serialize_profile_payload(
         "word_timestamps": bool(word_timestamps),
         "provider_api_key": provider_api_key,
         "provider_base_url": provider_base_url,
+        "provider_remote_url": provider_remote_url,
         "provider_timeout_seconds": float(provider_timeout_seconds),
         "provider_poll_interval": float(provider_poll_interval),
         "provider_smart_format": bool(provider_smart_format),
         "provider_speaker_labels": bool(provider_speaker_labels),
         "provider_keywords": provider_keywords,
         "provider_keep_raw_response": bool(provider_keep_raw_response),
+        "provider_fallback_to_local": bool(provider_fallback_to_local),
         "temperature": float(temperature),
         "vad_min_silence_ms": int(vad_min_silence_ms),
         "cpu_threads": int(cpu_threads),
@@ -925,12 +971,14 @@ def save_current_profile(
     word_timestamps: bool,
     provider_api_key: str,
     provider_base_url: str,
+    provider_remote_url: str,
     provider_timeout_seconds: float,
     provider_poll_interval: float,
     provider_smart_format: bool,
     provider_speaker_labels: bool,
     provider_keywords: str,
     provider_keep_raw_response: bool,
+    provider_fallback_to_local: bool,
     temperature: float,
     vad_min_silence_ms: int,
     cpu_threads: int,
@@ -972,12 +1020,14 @@ def save_current_profile(
         word_timestamps,
         provider_api_key,
         provider_base_url,
+        provider_remote_url,
         provider_timeout_seconds,
         provider_poll_interval,
         provider_smart_format,
         provider_speaker_labels,
         provider_keywords,
         provider_keep_raw_response,
+        provider_fallback_to_local,
         temperature,
         vad_min_silence_ms,
         cpu_threads,
@@ -1033,12 +1083,14 @@ def load_saved_profile(profile_name: str | None):
         value("word_timestamps", True),
         value("provider_api_key", ""),
         value("provider_base_url", ""),
+        value("provider_remote_url", ""),
         value("provider_timeout_seconds", 900),
         value("provider_poll_interval", 3),
         value("provider_smart_format", True),
         value("provider_speaker_labels", False),
         value("provider_keywords", ""),
         value("provider_keep_raw_response", False),
+        value("provider_fallback_to_local", True),
         value("temperature", 0.0),
         value("vad_min_silence_ms", 500),
         value("cpu_threads", 0),
@@ -1146,12 +1198,14 @@ def run_batch(
     word_timestamps: bool,
     provider_api_key: str,
     provider_base_url: str,
+    provider_remote_url: str,
     provider_timeout_seconds: float,
     provider_poll_interval: float,
     provider_smart_format: bool,
     provider_speaker_labels: bool,
     provider_keywords: str,
     provider_keep_raw_response: bool,
+    provider_fallback_to_local: bool,
     temperature: float,
     vad_min_silence_ms: int,
     cpu_threads: int,
@@ -1174,13 +1228,22 @@ def run_batch(
         raise gr.Error("En az bir cikti formati secmelisin.")
 
     resolved_files, warnings = collect_input_files(files, local_paths_text, folder_path, recursive_scan)
-    if not resolved_files:
+    remote_audio_url_text = provider_remote_url.strip()
+    normalized_provider = normalize_provider_name(provider)
+    if remote_audio_url_text and not provider_uses_remote_api(normalized_provider):
+        raise gr.Error("Remote audio URL yalnizca hosted provider'larla kullanilabilir.")
+    if remote_audio_url_text and not provider_supports_remote_url(normalized_provider):
+        raise gr.Error(f"{normalized_provider} remote audio URL ingest desteklemiyor.")
+    job_sources: list[str | Path] = list(resolved_files)
+    if not job_sources and remote_audio_url_text:
+        job_sources = [build_remote_source_name(remote_audio_url_text)]
+        warnings.append(f"[INFO] Remote URL kaynagi kullaniliyor -> {remote_audio_url_text}")
+    if not job_sources:
         raise gr.Error(
-            "En az bir ses dosyasi secmelisin ya da yerel disk moduna tam dosya yolu/klasor girmelisin."
+            "En az bir ses dosyasi secmelisin ya da provider remote URL alanina gecerli bir medya URL'si girmelisin."
         )
 
     normalized_language = None if language.strip().lower() == "auto" else language.strip()
-    normalized_provider = normalize_provider_name(provider)
     resolved_model = model.strip() or get_provider_default_model(normalized_provider)
     settings = TranscriptionSettings(
         provider=normalized_provider,
@@ -1188,12 +1251,14 @@ def run_batch(
         provider_model=resolved_model,
         provider_api_key=provider_api_key.strip() or None,
         provider_base_url=provider_base_url.strip() or None,
+        provider_remote_url=provider_remote_url.strip() or None,
         provider_timeout_seconds=float(provider_timeout_seconds),
         provider_poll_interval=float(provider_poll_interval),
         provider_smart_format=bool(provider_smart_format),
         provider_speaker_labels=bool(provider_speaker_labels),
         provider_keywords=provider_keywords,
         provider_keep_raw_response=bool(provider_keep_raw_response),
+        provider_fallback_to_local=bool(provider_fallback_to_local),
         language=normalized_language,
         task=task,
         device=device,
@@ -1225,17 +1290,18 @@ def run_batch(
     preview_chunks: list[str] = []
     generated_files: list[str] = []
     log_lines: list[str] = warnings + [
-        f"[INFO] {len(resolved_files)} dosya siraya alindi. provider={normalized_provider}, model={resolved_model}, gorev={task}"
+        f"[INFO] {len(job_sources)} is siraya alindi. provider={normalized_provider}, model={resolved_model}, gorev={task}"
     ]
     sticky_messages: set[str] = set(log_lines)
     current_status = "[CALISIYOR] Kuyruk hazirlaniyor"
 
     yield table_rows, "", generated_files, render_logs(log_lines, current_status)
 
-    total = len(resolved_files)
-    for index, source in enumerate(resolved_files, start=1):
-        current_status = f"[CALISIYOR] {source.name}: siraya alindi"
-        progress((index - 1) / total, desc=f"Sirada: {source.name}")
+    total = len(job_sources)
+    for index, source in enumerate(job_sources, start=1):
+        source_name = Path(str(source)).name
+        current_status = f"[CALISIYOR] {source_name}: siraya alindi"
+        progress((index - 1) / total, desc=f"Sirada: {source_name}")
         yield (
             table_rows,
             "\n\n".join(preview_chunks),
@@ -1262,7 +1328,7 @@ def run_batch(
                 )
         except Exception as exc:
             logger.exception("Transcription failed for %s", source)
-            log_lines.append(f"[HATA] {source.name}: {exc}")
+            log_lines.append(f"[HATA] {source_name}: {exc}")
             current_status = None
             yield (
                 table_rows,
@@ -1273,7 +1339,7 @@ def run_batch(
             continue
 
         if result is None:
-            log_lines.append(f"[HATA] {source.name}: sonuc olusturulamadi.")
+            log_lines.append(f"[HATA] {source_name}: sonuc olusturulamadi.")
             current_status = None
             yield (
                 table_rows,
@@ -1283,11 +1349,11 @@ def run_batch(
             )
             continue
 
-        preview_chunks.append(f"## {source.name}\n{result.text.strip()}")
+        preview_chunks.append(f"## {source_name}\n{result.text.strip()}")
         generated_files.extend(str(path) for path in result.output_files.values())
         table_rows.append(
             [
-                source.name,
+                source_name,
                 result.provider,
                 result.language or "unknown",
                 round(result.duration or 0, 2),
@@ -1298,11 +1364,11 @@ def run_batch(
             ]
         )
         log_lines.append(
-            f"[OK] {source.name} -> dil={result.language or 'unknown'}, "
+            f"[OK] {source_name} -> dil={result.language or 'unknown'}, "
             f"segment={len(result.segments)}, cikti={len(result.output_files)}"
         )
         current_status = None
-        progress(index / total, desc=f"Tamamlandi: {source.name}")
+        progress(index / total, desc=f"Tamamlandi: {source_name}")
         yield (
             table_rows,
             "\n\n".join(preview_chunks),
@@ -1338,12 +1404,14 @@ def run_watch_panel(
     word_timestamps: bool,
     provider_api_key: str,
     provider_base_url: str,
+    provider_remote_url: str,
     provider_timeout_seconds: float,
     provider_poll_interval: float,
     provider_smart_format: bool,
     provider_speaker_labels: bool,
     provider_keywords: str,
     provider_keep_raw_response: bool,
+    provider_fallback_to_local: bool,
     temperature: float,
     vad_min_silence_ms: int,
     cpu_threads: int,
@@ -1363,6 +1431,8 @@ def run_watch_panel(
 ):
     if not watch_folder_path.strip():
         raise gr.Error("Izlenecek klasor yolunu girmelisin.")
+    if provider_remote_url.strip():
+        raise gr.Error("Watch modunda provider remote URL kullanilmaz. Bu alan tekil batch/CLI isleri icindir.")
 
     normalized_provider = normalize_provider_name(provider)
     resolved_model = model.strip() or get_provider_default_model(normalized_provider)
@@ -1372,12 +1442,14 @@ def run_watch_panel(
         provider_model=resolved_model,
         provider_api_key=provider_api_key.strip() or None,
         provider_base_url=provider_base_url.strip() or None,
+        provider_remote_url=provider_remote_url.strip() or None,
         provider_timeout_seconds=float(provider_timeout_seconds),
         provider_poll_interval=float(provider_poll_interval),
         provider_smart_format=bool(provider_smart_format),
         provider_speaker_labels=bool(provider_speaker_labels),
         provider_keywords=provider_keywords,
         provider_keep_raw_response=bool(provider_keep_raw_response),
+        provider_fallback_to_local=bool(provider_fallback_to_local),
         language=None if language.strip().lower() == "auto" else language.strip(),
         task=task,
         device=device,
@@ -1447,7 +1519,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ui_parser.add_argument("--share", action="store_true")
 
     cli_parser = subparsers.add_parser("transcribe", help="Transcribe files from the CLI")
-    cli_parser.add_argument("files", nargs="+", help="Audio or video files to transcribe")
+    cli_parser.add_argument("files", nargs="*", help="Audio or video files to transcribe")
     add_common_transcription_arguments(cli_parser)
 
     watch_parser = subparsers.add_parser("watch", help="Watch a folder and auto-transcribe new media files")
@@ -1512,12 +1584,14 @@ def add_common_transcription_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--glossary-phrase-mode", action="store_true")
     parser.add_argument("--provider-api-key", default="")
     parser.add_argument("--provider-base-url", default="")
+    parser.add_argument("--provider-remote-url", default="")
     parser.add_argument("--provider-timeout-seconds", type=float, default=900.0)
     parser.add_argument("--provider-poll-interval", type=float, default=3.0)
     parser.add_argument("--provider-no-smart-format", action="store_true")
     parser.add_argument("--provider-speaker-labels", action="store_true")
     parser.add_argument("--provider-keywords", default="")
     parser.add_argument("--provider-keep-raw-response", action="store_true")
+    parser.add_argument("--provider-no-local-fallback", action="store_true")
 
 
 def build_settings_from_args(args: argparse.Namespace) -> TranscriptionSettings:
@@ -1533,12 +1607,14 @@ def build_settings_from_args(args: argparse.Namespace) -> TranscriptionSettings:
         provider_model=resolved_model,
         provider_api_key=getattr(args, "provider_api_key", "") or None,
         provider_base_url=getattr(args, "provider_base_url", "") or None,
+        provider_remote_url=getattr(args, "provider_remote_url", "") or None,
         provider_timeout_seconds=float(getattr(args, "provider_timeout_seconds", 900.0)),
         provider_poll_interval=float(getattr(args, "provider_poll_interval", 3.0)),
         provider_smart_format=not bool(getattr(args, "provider_no_smart_format", False)),
         provider_speaker_labels=bool(getattr(args, "provider_speaker_labels", False)),
         provider_keywords=getattr(args, "provider_keywords", "") or "",
         provider_keep_raw_response=bool(getattr(args, "provider_keep_raw_response", False)),
+        provider_fallback_to_local=not bool(getattr(args, "provider_no_local_fallback", False)),
         language=None if args.language.lower() == "auto" else args.language,
         task=args.task,
         device=args.device,
@@ -1568,9 +1644,19 @@ def build_settings_from_args(args: argparse.Namespace) -> TranscriptionSettings:
 
 def run_cli(args: argparse.Namespace) -> int:
     settings = build_settings_from_args(args)
+    if settings.provider_remote_url and not provider_uses_remote_api(settings.provider):
+        raise RuntimeError("Remote audio URL yalnizca hosted provider'larla kullanilabilir.")
+    if settings.provider_remote_url and not provider_supports_remote_url(settings.provider):
+        raise RuntimeError(f"{settings.provider} remote audio URL ingest desteklemiyor.")
+
+    raw_files = list(args.files)
+    if not raw_files and settings.provider_remote_url:
+        raw_files = [build_remote_source_name(settings.provider_remote_url)]
+    if not raw_files:
+        raise RuntimeError("CLI icin en az bir dosya ya da --provider-remote-url vermelisin.")
 
     engine = TranscriptionEngine()
-    for raw_file in args.files:
+    for raw_file in raw_files:
         result = None
         for _, message, maybe_result in engine.stream_file(raw_file, settings, args.output_dir):
             if maybe_result is not None:

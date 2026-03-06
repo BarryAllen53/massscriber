@@ -6,6 +6,18 @@ The format is inspired by Keep a Changelog and the project follows Semantic Vers
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-06
+
+- Added provider-side remote URL ingest for Deepgram and AssemblyAI, so large hosted jobs can run without uploading the file through the browser first.
+- Added hosted-provider-to-local fallback, letting jobs continue with the local engine when an API rejects the file, times out, or otherwise fails.
+- Added UI controls for remote audio URLs and hosted-to-local fallback.
+- Added CLI flags for `--provider-remote-url` and `--provider-no-local-fallback`.
+- Added provider help and doctor output details for remote URL support and upload-size limits.
+- Added remote-URL provider tests plus hosted-to-local fallback tests.
+- Fixed the remaining Linux CI issue in the Windows CUDA runtime test by patching the runtime module's `Path` constructor alongside `os.name`.
+- Fixed hosted provider workflows so remote-URL-only CLI runs are supported without requiring a local input file.
+- Fixed watch mode validation so remote URL settings cannot silently leak into folder-watch jobs.
+
 ## [0.3.3] - 2026-03-06
 
 - Fixed the Linux CI failure by computing temporary Windows-path test inputs before patching `os.name` to `nt` in the CUDA runtime test.

@@ -32,10 +32,13 @@ class UiInputTests(TestCase):
                 "sk-demo",
                 "--provider-base-url",
                 "https://proxy.example/v1",
+                "--provider-remote-url",
+                "https://cdn.example/audio.mp3",
                 "--provider-speaker-labels",
                 "--provider-keywords",
                 "OpenAI\nMassscriber",
                 "--provider-keep-raw-response",
+                "--provider-no-local-fallback",
             ]
         )
 
@@ -52,8 +55,10 @@ class UiInputTests(TestCase):
         self.assertTrue(settings.glossary_case_sensitive)
         self.assertEqual(settings.provider_api_key, "sk-demo")
         self.assertEqual(settings.provider_base_url, "https://proxy.example/v1")
+        self.assertEqual(settings.provider_remote_url, "https://cdn.example/audio.mp3")
         self.assertTrue(settings.provider_speaker_labels)
         self.assertTrue(settings.provider_keep_raw_response)
+        self.assertFalse(settings.provider_fallback_to_local)
 
     def test_collect_input_files_combines_upload_manual_and_folder_sources(self):
         with TemporaryDirectory() as tmpdir:
