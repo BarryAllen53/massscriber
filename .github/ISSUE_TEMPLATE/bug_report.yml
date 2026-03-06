@@ -1,0 +1,66 @@
+name: Bug report
+description: Report a reproducible problem in Massscriber
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+        Please include enough detail for us to reproduce it reliably.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the bug and the actual behavior you saw.
+      placeholder: The transcription UI crashes after I select a file...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+      placeholder: The file should be processed and a transcript should be generated.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Provide a short, numbered sequence.
+      placeholder: |
+        1. Open the app
+        2. Select a file
+        3. Choose large-v3
+        4. Click Transcribe
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - Linux
+        - macOS
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      placeholder: "0.1.0"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste logs, error messages, or screenshots if available.
+      render: shell
