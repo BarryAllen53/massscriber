@@ -41,7 +41,7 @@ The GitHub Actions release workflow will:
 - create a GitHub Release
 - upload the built artifacts to that release
 
-If a `PYPI_API_TOKEN` repository secret is configured, the PyPI workflow will also publish the same version to PyPI after the GitHub Release is published.
+If a `PYPI_API_TOKEN` repository secret is configured, the PyPI workflow will also publish the tagged version to PyPI when you push a release tag.
 
 ## PyPI setup
 
